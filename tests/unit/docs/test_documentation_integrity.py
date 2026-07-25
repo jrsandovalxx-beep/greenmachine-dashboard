@@ -283,10 +283,12 @@ def test_no_failed_capture_raw_bundle_ships_in_evidence() -> None:
 # --------------------------------------------------------------------------
 
 # GM-020 implemented `ingestion`; GM-030 implemented `reporting` (the
-# manual-review dashboard layer). The remaining four stay placeholder-only
-# until their tickets land (scoring and the Validation Layer are Sprint 2+).
-# `validation` was an unguarded placeholder until GM-040 closed the gap.
-PLACEHOLDER_PACKAGES = ("scoring", "features", "validation", "cli")
+# manual-review dashboard layer); GM-041 implemented `scoring`, whose purity is
+# guarded by tests/architecture/test_scoring_boundaries.py instead. The
+# remaining three stay placeholder-only until their tickets land (the
+# Validation Layer is Sprint 2+). `validation` was an unguarded placeholder
+# until GM-040 closed the gap.
+PLACEHOLDER_PACKAGES = ("features", "validation", "cli")
 
 
 def _is_docstring_only(path: Path) -> bool:
@@ -300,7 +302,7 @@ def _is_docstring_only(path: Path) -> bool:
 
 @pytest.mark.parametrize("package", PLACEHOLDER_PACKAGES)
 def test_placeholder_packages_contain_no_behavior(package: str) -> None:
-    """No scoring engine exists — structurally.
+    """No unticketed implementation exists — structurally.
 
     Each deferred package holds only a docstring-only ``__init__`` module. Any
     function, class, or assignment appearing here means production

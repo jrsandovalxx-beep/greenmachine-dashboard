@@ -1,0 +1,414 @@
+# SYNTHETIC GM-041 ENGINE FIXTURE — NOT A MODEL CONFIGURATION.
+#
+# Every number here is deliberately wrong for baseball so it can never be
+# mistaken for the approved model: the category split is 2.8/3.1/2.1/2.2/1.8
+# rather than the specified 3/3/2/2/2, the grade table is 3.7/5.9/8.1/9.8
+# rather than 4/6/8/10, and the strong-category fraction is 0.66 rather than
+# 0.75. Engineering does not invent baseball thresholds; the production
+# allocations, buckets, and minimums remain open Product Owner decisions
+# (Q11-Q16). This fixture exists only to exercise the GM-041 engine against
+# real archived snapshots, so its missing-data rules anticipate exactly the
+# missing reasons the frozen GM-020 pipeline records.
+
+schema_version: 1
+model_configuration_version: "gm041-engine-synthetic-0"
+specification_version: "v6.3"
+
+fuzzy_scoring:
+  enabled: false
+
+allocations:
+  strong_category_fraction: "0.66"
+  total_max_points: "12"
+
+  categories:
+    - category: power_profile
+      max_points: "2.8"
+      components: [exit_velocity, barrel_pct, hard_hit_pct]
+    - category: pitcher_matchup
+      max_points: "3.1"
+      components: [pitch_mix_pressure, put_away_pitch_exploitation]
+    - category: form
+      max_points: "2.1"
+      components: [sweet_spot_pct, attack_angle_quality, bat_speed]
+    - category: pull_power
+      max_points: "2.2"
+      components: [pull_pct_air_balls]
+    - category: environment
+      max_points: "1.8"
+      components: [park, weather]
+
+  grade_cutoffs:
+    - { grade: D, lower: "0", upper: "3.7", terminal: false }
+    - { grade: C, lower: "3.7", upper: "5.9", terminal: false }
+    - { grade: B, lower: "5.9", upper: "8.1", terminal: false }
+    - { grade: A, lower: "8.1", upper: "9.8", terminal: false }
+    - { grade: S, lower: "9.8", upper: "12", terminal: true }
+
+  signal_rules:
+    - priority: 1
+      signal: AVOID
+      override_reason: synthetic_power_profile_veto
+      any_of:
+        - all_of:
+            - { type: category_score, category: power_profile, operator: less_than, value: "0.9" }
+    - priority: 2
+      signal: STRONG_BET
+      any_of:
+        - all_of:
+            - { type: grade_in, grades: [S, A] }
+            - { type: strong_category_count, operator: at_least, count: 3 }
+    - priority: 3
+      signal: LEAN
+      any_of:
+        - all_of:
+            - { type: grade_in, grades: [A, B] }
+    - priority: 4
+      signal: PASS
+      any_of:
+        - all_of:
+            - { type: always }
+
+components:
+  - component_id: exit_velocity
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1.1"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "130"
+            buckets:
+              - { lower: "0", upper: "80", points: "0" }
+              - { lower: "80", upper: "90", points: "0.55" }
+              - { lower: "90", upper: "130", points: "1.1" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "130"
+            buckets:
+              - { lower: "0", upper: "80", points: "0" }
+              - { lower: "80", upper: "90", points: "0.55" }
+              - { lower: "90", upper: "130", points: "1.1" }
+
+  - component_id: barrel_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.9"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "7", points: "0" }
+              - { lower: "7", upper: "14", points: "0.45" }
+              - { lower: "14", upper: "100", points: "0.9" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "7", points: "0" }
+              - { lower: "7", upper: "14", points: "0.45" }
+              - { lower: "14", upper: "100", points: "0.9" }
+
+  - component_id: hard_hit_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.8"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "40", points: "0" }
+              - { lower: "40", upper: "55", points: "0.4" }
+              - { lower: "55", upper: "100", points: "0.8" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "40", points: "0" }
+              - { lower: "40", upper: "55", points: "0.4" }
+              - { lower: "55", upper: "100", points: "0.8" }
+
+  - component_id: pitch_mix_pressure
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1.6"
+    sample_type: pitches
+    missing_data:
+      policy: record_missing
+      reasons: [SOURCE_UNAVAILABLE, EXPECTED_PITCHER_UNKNOWN]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1.6" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1.6" }
+
+  - component_id: put_away_pitch_exploitation
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1.5"
+    sample_type: pitches
+    missing_data:
+      policy: record_missing
+      reasons: [SOURCE_UNAVAILABLE, EXPECTED_PITCHER_UNKNOWN]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1.5" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1.5" }
+
+  - component_id: sweet_spot_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.7"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "28", points: "0" }
+              - { lower: "28", upper: "100", points: "0.7" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "28", points: "0" }
+              - { lower: "28", upper: "100", points: "0.7" }
+
+  - component_id: attack_angle_quality
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.8"
+    sample_type: swings
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            measurement_id: ideal_attack_angle_pct
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "0.8" }
+          - method: bucketed
+            measurement_id: attack_angle_threshold_proxy
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "60", points: "0" }
+              - { lower: "60", upper: "100", points: "0.8" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            measurement_id: ideal_attack_angle_pct
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "0.8" }
+          - method: bucketed
+            measurement_id: attack_angle_threshold_proxy
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "60", points: "0" }
+              - { lower: "60", upper: "100", points: "0.8" }
+
+  - component_id: bat_speed
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.6"
+    sample_type: swings
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "130"
+            buckets:
+              - { lower: "0", upper: "72", points: "0" }
+              - { lower: "72", upper: "130", points: "0.6" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "130"
+            buckets:
+              - { lower: "0", upper: "72", points: "0" }
+              - { lower: "72", upper: "130", points: "0.6" }
+
+  - component_id: pull_pct_air_balls
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "2.2"
+    sample_type: air_balls
+    missing_data:
+      policy: record_missing
+      reasons: [NO_EVENTS_IN_WINDOW, TRACKING_UNAVAILABLE, INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 2
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "18", points: "0" }
+              - { lower: "18", upper: "32", points: "1.1" }
+              - { lower: "32", upper: "100", points: "2.2" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "18", points: "0" }
+              - { lower: "18", upper: "32", points: "1.1" }
+              - { lower: "32", upper: "100", points: "2.2" }
+
+  - component_id: park
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1"
+    sample_type: games
+    missing_data:
+      policy: record_missing
+      reasons: [SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "1" }
+
+  - component_id: weather
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.8"
+    sample_type: games
+    missing_data:
+      policy: record_missing
+      reasons: [WEATHER_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "0.8" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0", upper: "50", points: "0" }
+              - { lower: "50", upper: "100", points: "0.8" }
