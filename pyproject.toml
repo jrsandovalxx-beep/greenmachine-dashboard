@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "greenmachine"
+version = "0.2.0"
+description = "A deterministic MLB home-run grading and research platform."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+# Runtime dependencies are confined to the configuration package's modelling
+# toolchain (ARCHITECTURE.md section 9). The deterministic domain, common, and
+# scoring core still depend on nothing but the standard library, and an
+# architecture test enforces that: neither of these may be imported from
+# `domain` or `common`.
+dependencies = [
+    "PyYAML>=6,<7",
+    "pydantic>=2,<3",
+    # IANA time-zone data for venue-local scheduled times (GM-020). zoneinfo
+    # falls back to the OS database, which Windows does not ship; tzdata is
+    # pure, versioned zone data — a deterministic input, not behavior.
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+# The GM-030 manual-review prototype UI. Optional: nothing in src/ imports
+# streamlit (architecture-enforced); only the repository-root composition
+# root streamlit_app.py does.
+ui = [
+    "streamlit>=1.32,<2",
+]
+dev = [
+    # Deterministic property testing for the GM-008 golden/property harness.
+    # Test-only: an architecture guard keeps hypothesis out of src/.
+    "hypothesis>=6,<7",
+    "mypy>=1.11",
+    "pre-commit>=3.7",
+    "pytest>=8.0",
+    "ruff>=0.6",
+    # The GM-030 app-smoke tests drive the dashboard through Streamlit's
+    # supported AppTest API, so dev needs the same bounded UI dependency.
+    "streamlit>=1.32,<2",
+    # Type stubs only; PyYAML ships no inline types. Not a runtime dependency.
+    "types-PyYAML>=6,<7",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "B",   # flake8-bugbear
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "RUF", # ruff-specific rules
+    "SIM", # flake8-simplify
+    "UP",  # pyupgrade
+    "W",   # pycodestyle warnings
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# --hypothesis-seed=20260724 is the GM-008 fixed property-test seed (ADR-0008):
+# Hypothesis's supported pytest seed mechanism, configured explicitly here —
+# never derived from a date, a clock, or an environment variable. A developer
+# overrides it deliberately on the command line (a later --hypothesis-seed
+# wins), e.g. --hypothesis-seed=12345 or --hypothesis-seed=random.
+addopts = "-ra --strict-markers --strict-config --hypothesis-seed=20260724"

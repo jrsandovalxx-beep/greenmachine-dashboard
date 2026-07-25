@@ -1,0 +1,26 @@
+# Pre-commit runs the same formatting and linting gates as CI, one step earlier.
+# Type checking and tests are deliberately left to CI and `make check`: they are
+# slower than a commit hook should be, and running them here would encourage
+# skipping hooks.
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      # Lint and autofix first, then format: fixes can change layout, so
+      # formatting must have the last word.
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
