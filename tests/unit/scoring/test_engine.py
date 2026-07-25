@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from gm041_engine_snapshots import DEFAULT_TOTAL, engine_snapshot
+from gm041_engine_snapshots import DEFAULT_TOTAL, attack_angle_snapshot, engine_snapshot
 
 from greenmachine.config import (
     ConfigSemanticError,
@@ -26,6 +26,7 @@ from greenmachine.domain import (
     ComponentId,
     EvaluatedGradeResult,
     Grade,
+    InputSnapshot,
     MeasurementId,
     MissingReason,
     NotEvaluableGradeResult,
@@ -644,3 +645,183 @@ def test_insufficient_warnings_survive_the_coherence_checks(
         score for score in result.component_scores if score.component_id is ComponentId.BARREL_PCT
     )
     assert barrel.points_awarded > 0
+
+
+# --------------------------------------------------------------------------
+# One observation state per component (final independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# attack_angle_quality is satisfied by exactly one of two mutually exclusive
+# measurements (MODEL_SPEC §9.1), yet a structurally valid snapshot can carry a
+# record for each variant. The engine must count matches across BOTH the present
+# and missing collections and refuse anything other than exactly one -- never
+# selecting the first match, never letting present silently win over missing.
+# Otherwise an observation is left unscored while still travelling on the
+# returned result, unexplained by the audit derivation.
+
+_IDEAL = MeasurementId.IDEAL_ATTACK_ANGLE_PCT
+_PROXY = MeasurementId.ATTACK_ANGLE_THRESHOLD_PROXY
+
+
+def _refusal(snapshot: InputSnapshot, config: GreenMachineConfig) -> str:
+    """Score and require a typed refusal, returning the message.
+
+    Asserting `pytest.raises` also proves no partial result escaped: the call
+    raises instead of returning, so there is no GradeResult to inspect.
+    """
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+    message = str(caught.value)
+    assert "attack_angle_quality" in message
+    assert "exactly one observation state" in message
+    return message
+
+
+def test_two_present_attack_angle_measurements_are_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL, _PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "2 observation states" in message
+    assert "2 present, 0 missing" in message
+    assert _IDEAL.value in message
+    assert _PROXY.value in message
+
+
+def test_two_missing_attack_angle_measurements_are_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The gap the review found: the missing collection was never counted."""
+    snapshot = attack_angle_snapshot(missing_measurements=[_IDEAL, _PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "2 observation states" in message
+    assert "0 present, 2 missing" in message
+
+
+def test_a_present_ideal_plus_a_missing_proxy_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The present path must not silently take precedence over the missing one."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL], missing_measurements=[_PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "1 present, 1 missing" in message
+
+
+def test_a_present_proxy_plus_a_missing_ideal_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = attack_angle_snapshot(present_measurements=[_PROXY], missing_measurements=[_IDEAL])
+
+    message = _refusal(snapshot, config)
+
+    assert "1 present, 1 missing" in message
+
+
+def test_reversing_two_missing_records_produces_the_same_refusal(
+    config: GreenMachineConfig,
+) -> None:
+    """Order independence: the engine no longer depends on which record is first."""
+    forward = _refusal(attack_angle_snapshot(missing_measurements=[_IDEAL, _PROXY]), config)
+    reversed_ = _refusal(attack_angle_snapshot(missing_measurements=[_PROXY, _IDEAL]), config)
+
+    assert "0 present, 2 missing" in forward
+    assert "0 present, 2 missing" in reversed_
+
+
+def test_a_single_present_ideal_attack_angle_still_scores(
+    config: GreenMachineConfig,
+) -> None:
+    """Anti-vacuity: the guard must not reject the ordinary single-record case."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL])
+
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    scored = next(
+        score
+        for score in result.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert scored.measurement_id is _IDEAL
+    assert scored.points_awarded == Decimal("0.8")
+    assert scored.bucket_hit is not None
+    assert scored.bucket_hit.lower_bound == Decimal("50")
+
+
+def test_a_single_present_proxy_measurement_still_scores(
+    config: GreenMachineConfig,
+) -> None:
+    """The proxy resolves through its OWN bucket set, never the ideal's.
+
+    The fixture puts the ideal threshold at 50 and the proxy threshold at 60, so
+    an observed 65 scores under both while an observed 55 scores only under the
+    ideal. Checking both values proves the measurement-specific buckets are
+    honoured rather than substituted (MODEL_SPEC §9.1).
+    """
+    scoring = score_snapshot(
+        attack_angle_snapshot(present_measurements=[_PROXY], value="65"), config
+    )
+    assert isinstance(scoring, EvaluatedGradeResult)
+    awarded = next(
+        score
+        for score in scoring.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert awarded.measurement_id is _PROXY
+    assert awarded.points_awarded == Decimal("0.8")
+
+    below = score_snapshot(attack_angle_snapshot(present_measurements=[_PROXY], value="55"), config)
+    assert isinstance(below, EvaluatedGradeResult)
+    zeroed = next(
+        score
+        for score in below.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert zeroed.measurement_id is _PROXY
+    assert zeroed.points_awarded == Decimal("0")
+    assert zeroed.bucket_hit is not None
+    assert zeroed.bucket_hit.upper_bound == Decimal("60")
+
+
+def test_a_single_missing_attack_angle_follows_its_missing_data_policy(
+    config: GreenMachineConfig,
+) -> None:
+    """One missing record is unambiguous and takes the configured policy."""
+    snapshot = attack_angle_snapshot(missing_measurements=[_IDEAL])
+
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    scored = next(
+        score
+        for score in result.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert scored.points_awarded == Decimal("0")
+    stages = [
+        entry.stage
+        for entry in result.audit_derivation
+        if entry.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    ]
+    assert "missing_recorded_zero" in stages
+
+
+def test_an_ambiguous_component_produces_no_partial_result(
+    config: GreenMachineConfig,
+) -> None:
+    """Nothing is returned, and no observation is mutated or discarded."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL], missing_measurements=[_PROXY])
+    before_present = snapshot.present_observations
+    before_missing = snapshot.missing_observations
+
+    with pytest.raises(ScoringInputError):
+        score_snapshot(snapshot, config)
+
+    assert snapshot.present_observations == before_present
+    assert snapshot.missing_observations == before_missing

@@ -10,7 +10,8 @@ hand in tests. Everything is visibly synthetic.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+import dataclasses
+from collections.abc import Collection, Mapping, Sequence
 
 import synthetic_records
 
@@ -119,4 +120,90 @@ def engine_snapshot(
         weather_is_forecast=any(
             observation.component_id is ComponentId.WEATHER for observation in present_observations
         ),
+    )
+
+
+def attack_angle_snapshot(
+    *,
+    present_measurements: Sequence[MeasurementId] = (),
+    missing_measurements: Sequence[MeasurementId] = (),
+    missing_reason: MissingReason = MissingReason.TRACKING_UNAVAILABLE,
+    value: str | None = None,
+) -> InputSnapshot:
+    """A snapshot whose ``attack_angle_quality`` carries exactly the given records.
+
+    Every other component is present and coherent, so the only thing under test
+    is how many observation states represent attack-angle quality. Supplying
+    more than one measurement in total builds a **deliberately ambiguous**
+    snapshot that the engine must refuse; nothing in production produces one.
+
+    Order is preserved as given, so a test can reverse two records and prove the
+    refusal does not depend on which one appears first. ``value`` overrides the
+    observed attack-angle value, whose two measurements have deliberately
+    different bucket boundaries in the fixture (ideal at 50, proxy at 60).
+    """
+    default_value, unit, sample_type, count, minimum = _DEFAULTS[ComponentId.ATTACK_ANGLE_QUALITY]
+    observed = value if value is not None else default_value
+    present_observations: list[MetricObservation] = []
+    missing_observations: list[MissingObservation] = []
+
+    for component, (
+        other_value,
+        other_unit,
+        other_type,
+        other_count,
+        other_minimum,
+    ) in _DEFAULTS.items():
+        if component is ComponentId.ATTACK_ANGLE_QUALITY:
+            continue
+        present_observations.append(
+            synthetic_records.metric_observation(
+                component,
+                raw_value=other_value,
+                unit=other_unit,
+                sample_type=other_type,
+                sample_count=other_count,
+                minimum=other_minimum,
+                measurement_id=None,
+            )
+        )
+
+    for measurement in present_measurements:
+        present_observations.append(
+            synthetic_records.metric_observation(
+                ComponentId.ATTACK_ANGLE_QUALITY,
+                raw_value=observed,
+                unit=unit,
+                sample_type=sample_type,
+                sample_count=count,
+                minimum=minimum,
+                measurement_id=measurement,
+            )
+        )
+
+    for measurement in missing_measurements:
+        missing_observations.append(
+            dataclasses.replace(
+                synthetic_records.missing_observation(
+                    ComponentId.BAT_SPEED, missing_reason, sample_type
+                ),
+                component_id=ComponentId.ATTACK_ANGLE_QUALITY,
+                measurement_id=measurement,
+            )
+        )
+
+    return freeze_input_snapshot(
+        source_capture_id=synthetic_records.CAPTURE,
+        game_context=synthetic_records.game_context(),
+        batter=synthetic_records.batter(),
+        expected_starting_pitcher=synthetic_records.pitcher(),
+        pitcher_role=PitcherRole.EXPECTED_STARTER,
+        as_of=synthetic_records.AS_OF,
+        window_profile=present_observations[0].window_profile,
+        window_start=synthetic_records.WINDOW_START,
+        window_end=synthetic_records.WINDOW_END,
+        present_observations=tuple(present_observations),
+        missing_observations=tuple(missing_observations),
+        validation_inputs=(),
+        weather_is_forecast=True,
     )
