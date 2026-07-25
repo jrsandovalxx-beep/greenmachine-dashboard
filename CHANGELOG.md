@@ -14,6 +14,36 @@ GreenMachine tracks **four independent versions**, listed separately in every en
 
 ## [Unreleased]
 
+### Added — GM-040 prospective real-data vertical slice (2026-07-25)
+
+Pure composition over the frozen GM-020 pipeline — zero capture, archive, replay, metric,
+mapping, snapshot, or dashboard behavior changed; manifest v1, schema version 1, and
+`InputSnapshot` are untouched. One new module (`ingestion/operator.py`) and one operator
+script (`scripts/run_gm040_real_slice.py`) add the missing operator-facing extension points:
+
+- **explicit operator selection** (slate date, gamePk, hitter MLBAM id, projected/confirmed
+  lineup status, capture mode, optional note) — nothing guessed, invalid values fail closed;
+  lineup status is recorded in the generated operator report only
+  (`reports/operator_report.json` + `OPERATOR_REPORT.md`, appended before atomic
+  publication), never in an identity;
+- **honest timing classification** from recorded manifest instants: `prospective` restates
+  the frozen timing proof; explicitly permitted `retrospective-development` captures publish
+  but are clearly distinguished and never represented as locked pregame predictions — even
+  when their timestamps precede the scheduled start;
+- **expected-pitcher cross-check** (verification only — manifest v1 binds the pitcher capture
+  to the feed resolution, so a mismatch fails closed before publication; no override exists);
+- **idempotent publication**: identical re-runs verify (`verified-existing`) without writing,
+  true content conflicts fail explicitly, nothing is ever overwritten;
+- multi-player operation is independent one-hitter v1 bundles, demonstrated by live evidence:
+  a second real prospective bundle for the same game and a different hitter, discovered by the
+  existing Streamlit run selector with no code change;
+- the unguarded `validation` placeholder from the readiness memo is now enforced.
+
+Deliberately absent: slate aggregation, rankings, Pitchers/Bullpens to Target, bullpen
+capture, Record Book, outcomes, databases, weather, park changes, UI redesign, scheduled
+jobs, and all scoring. Reference: [`docs/GM_040_REAL_SLICE.md`](docs/GM_040_REAL_SLICE.md) and
+[`docs/GM_040_RUNBOOK.md`](docs/GM_040_RUNBOOK.md).
+
 ### Added — GM-030 Streamlit manual-review prototype (2026-07-24)
 
 A **usability prototype** dashboard over approved archived GM-020 runs — not the final

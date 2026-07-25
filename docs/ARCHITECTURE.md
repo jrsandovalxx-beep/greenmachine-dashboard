@@ -558,7 +558,12 @@ fail-closed schema contracts; normalized provider-neutral records; event-derived
 exact Decimal; separate `RECENT_7D` and `LONG_TERM_2Y` snapshots from one source capture; and
 deterministic offline replay. It computes no score, covers no full slate, and sources neither
 weather nor park factors. Reference: [GM_020_VERTICAL_SLICE.md](GM_020_VERTICAL_SLICE.md). The
-approved feasibility spike remains an isolated experiment outside production source.
+approved feasibility spike remains an isolated experiment outside production source. GM-040
+adds a composition-only operator layer (`ingestion/operator.py` + the
+`run_gm040_real_slice.py` script root): explicit selections, honest prospective vs.
+retrospective-development classification, per-bundle operator reports, and idempotent
+publication — one independent manifest-v1 bundle per hitter
+([GM_040_REAL_SLICE.md](GM_040_REAL_SLICE.md)).
 
 **Implemented as a usability prototype** — the manual-review dashboard (GM-030):
 `reporting` view models and a read-only loader (with strict display adapters for the

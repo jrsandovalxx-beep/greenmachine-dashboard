@@ -283,9 +283,10 @@ def test_no_failed_capture_raw_bundle_ships_in_evidence() -> None:
 # --------------------------------------------------------------------------
 
 # GM-020 implemented `ingestion`; GM-030 implemented `reporting` (the
-# manual-review dashboard layer). The remaining three stay placeholder-only
-# until their tickets land (scoring is Sprint 2+).
-PLACEHOLDER_PACKAGES = ("scoring", "features", "cli")
+# manual-review dashboard layer). The remaining four stay placeholder-only
+# until their tickets land (scoring and the Validation Layer are Sprint 2+).
+# `validation` was an unguarded placeholder until GM-040 closed the gap.
+PLACEHOLDER_PACKAGES = ("scoring", "features", "validation", "cli")
 
 
 def _is_docstring_only(path: Path) -> bool:

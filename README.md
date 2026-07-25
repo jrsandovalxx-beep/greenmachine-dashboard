@@ -151,7 +151,11 @@ profile-specific snapshots from one capture, and deterministic offline replay. F
 [docs/GM_020_VERTICAL_SLICE.md](docs/GM_020_VERTICAL_SLICE.md). It covers one game and one
 hitter — not a slate — and computes no score. Sample minimums are injected, never defaulted
 (production minimums remain **Q14**), and the pitch-matchup composites stay missing pending
-**Q15/Q16** rather than being invented.
+**Q15/Q16** rather than being invented. **GM-040** adds the operator workflow over that
+unchanged pipeline (`scripts/run_gm040_real_slice.py`): explicit real-data selections with
+projected/confirmed lineup status, honest prospective vs. retrospective-development
+classification, an operator report per bundle, and idempotent publication — one independent
+manifest-v1 bundle per hitter (see [docs/GM_040_RUNBOOK.md](docs/GM_040_RUNBOOK.md)).
 
 **Implemented as a usability prototype** — `reporting` + `streamlit_app.py` (GM-030, r1): a
 manual-review dashboard over approved archived runs, opening on an original GreenMachine

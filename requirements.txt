@@ -8,4 +8,3 @@ streamlit>=1.32,<2
 PyYAML>=6,<7
 pydantic>=2,<3
 tzdata>=2024.1
-.
