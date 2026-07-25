@@ -7,12 +7,47 @@ GreenMachine tracks **four independent versions**, listed separately in every en
 
 - **Product specification** — the baseball/product lineage (e.g. v6.2)
 - **Code version** — the software (this file's headings)
-- **Model configuration version** — thresholds, allocations, buckets, cutoffs, signal config
+- **Model configuration version** — thresholds, allocations, buckets, cutoffs
 - **Evaluation schema version** — persisted snapshot and evaluation record formats
 
 ---
 
 ## [Unreleased]
+
+### Added — GM-041.5 Stabilization & UX Review (2026-07-25)
+
+**Product specification** v6.3 · **Code** 0.2.0 · **Model configuration** none approved ·
+**Evaluation schema** 1. No frozen contract changed.
+
+- **Engine Evaluation screen** — a sixth hub destination rendering the GM-041 engine's six
+  outputs (Total Score, Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks) for
+  either window profile of an approved archived run. Evaluated and not-evaluable results
+  render as structurally distinct states; a not-evaluable result never becomes a zero or a
+  tier D.
+- **Every displayed score is a synthetic demonstration.** No production model configuration
+  is approved while Q11–Q16 remain open, so the screen runs under the disclaimed
+  non-production configuration and says so above the result, beside the total and tier, and
+  again below it. It produces no automated recommendation and no decision output.
+- **`reporting.load_verified_run`** — a new additive accessor returning a frozen
+  `VerifiedRun` (view models plus both frozen `InputSnapshot`s) from exactly one
+  replay-verification pass, with each snapshot deserialized once. `load_dashboard` is
+  unchanged for every existing caller and now delegates to it. This is what lets the
+  composition root score a run while `reporting` still imports neither `scoring` nor
+  `config`.
+
+### Changed — GM-041.5
+
+- The disclaimed synthetic configuration moved **byte-for-byte** from
+  `tests/fixtures/config/valid/` to `config/nonproduction/gm041_engine_synthetic.yaml`, so the
+  deployed application never reads an executable configuration out of the test tree. No second
+  copy remains. Source digest, semantic `config_hash`, and version identifier are unchanged,
+  and the committed GM-041 sample JSON and Markdown remain byte-identical.
+- The GM-003 configuration-location guards now permit `config/nonproduction/` alongside
+  `tests/fixtures/`, and additionally require every configuration in that directory to
+  announce itself as synthetic and non-production.
+
+---
+
 
 ### Added — GM-040 prospective real-data vertical slice (2026-07-25)
 

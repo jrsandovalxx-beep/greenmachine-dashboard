@@ -1,7 +1,7 @@
 """GM-041 engine unit suite, driven by the disclaimed synthetic configuration.
 
 Every expected number below is derivable by hand from
-``tests/fixtures/config/valid/gm041_engine_synthetic.yaml`` — deliberately
+``config/nonproduction/gm041_engine_synthetic.yaml`` — deliberately
 wrong-for-baseball values that can never be mistaken for the approved model
 (Q11-Q16 remain open).
 """
@@ -43,9 +43,7 @@ from greenmachine.scoring import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_PATH = (
-    REPO_ROOT / "tests" / "fixtures" / "config" / "valid" / ("gm041_engine_synthetic.yaml")
-)
+FIXTURE_PATH = REPO_ROOT / "config" / "nonproduction" / "gm041_engine_synthetic.yaml"
 
 
 @pytest.fixture(scope="module")

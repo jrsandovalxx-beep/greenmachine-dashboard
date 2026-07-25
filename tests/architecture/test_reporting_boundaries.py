@@ -242,3 +242,78 @@ def test_the_hub_theme_asset_is_import_free_and_request_free() -> None:
     source = (REPO_ROOT / "hub_theme.py").read_text(encoding="utf-8").lower()
     for banned in ("http://", "https://", "url(", "@import", "<script", "base64"):
         assert banned not in source, banned
+
+
+# --------------------------------------------------------------------------
+# GM-041.5: the composition root scores; reporting still may not
+# --------------------------------------------------------------------------
+
+
+def test_reporting_still_cannot_import_scoring_or_configuration() -> None:
+    """The whole point of the VerifiedRun hand-off.
+
+    Reporting returns frozen domain snapshots and stops there. If it ever
+    imported ``scoring`` or ``config`` directly, the layering that keeps the
+    grading engine independent of presentation would be gone — and this guard,
+    not a code review, is what holds that line.
+    """
+    for path in reporting_files():
+        package = "greenmachine.reporting"
+        for record in collect_imports(parse_file(path)):
+            resolved = record.resolved(package)
+            for forbidden in ("greenmachine.scoring", "greenmachine.config"):
+                assert not within(resolved, forbidden), f"{path.name} imports {resolved}"
+
+
+def test_only_the_composition_root_imports_scoring() -> None:
+    """`streamlit_app.py` is the one presentation-side module allowed to score."""
+    app_modules = {record.module for record in collect_imports(parse_file(APP_PATH))}
+    assert any(module.startswith("greenmachine.scoring") for module in app_modules), (
+        "anti-vacuity: the composition root really does import the engine"
+    )
+    assert any(module.startswith("greenmachine.config") for module in app_modules)
+    assert any(module.startswith("greenmachine.reporting") for module in app_modules)
+
+
+def test_the_verified_run_record_carries_snapshots_and_no_scoring_behaviour() -> None:
+    """VerifiedRun is a hand-off value, not a place to hide grading logic."""
+    from greenmachine.reporting import VerifiedRun
+
+    annotations = VerifiedRun.__annotations__
+    assert set(annotations) == {"dashboard", "recent_snapshot", "long_term_snapshot"}
+    for name in dir(VerifiedRun):
+        if name.startswith("_"):
+            continue
+        attribute = getattr(VerifiedRun, name, None)
+        assert not callable(attribute), f"VerifiedRun exposes behaviour: {name}"
+
+
+def test_the_dashboard_view_model_stays_free_of_domain_snapshots() -> None:
+    """DashboardData remains view-model-only; snapshots ride on VerifiedRun."""
+    from greenmachine.reporting import DashboardData
+
+    assert "snapshot" not in " ".join(DashboardData.__annotations__).lower() or all(
+        "InputSnapshot" not in str(annotation)
+        for annotation in DashboardData.__annotations__.values()
+    )
+
+
+def test_the_app_never_converts_a_decimal_through_float() -> None:
+    """ADR-0002: rendering reads exact Decimal text, never a binary float."""
+    tree = parse_file(APP_PATH)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            assert node.func.id != "float", "streamlit_app.py must not call float()"
+        if isinstance(node, ast.Attribute):
+            assert node.attr != "__float__"
+
+
+def test_the_app_writes_no_automated_value_into_manual_review_state() -> None:
+    """No assignment into a `review::`-prefixed session-state key outside the
+    manual worksheet renderer, and no copy-to-worksheet control anywhere."""
+    source = APP_PATH.read_text(encoding="utf-8")
+    evaluation_start = source.index("def _render_evaluation(")
+    evaluation_source = source[evaluation_start:]
+    assert "review::" not in evaluation_source
+    for banned in ("apply score", "copy to worksheet", "copy to review"):
+        assert banned not in source.lower(), banned

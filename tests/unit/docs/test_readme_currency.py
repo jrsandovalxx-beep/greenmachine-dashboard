@@ -161,9 +161,29 @@ def test_the_readme_records_the_current_ticket_sequence() -> None:
     assert "GM-042" in text
 
 
-def test_the_readme_states_the_prototype_does_not_render_the_engine_yet() -> None:
+def test_the_readme_states_the_engine_evaluation_screen_exists() -> None:
+    """GM-041.5 delivered what rev 6 recorded as pending.
+
+    Until GM-041.5 this asserted the opposite — that the prototype did *not*
+    render the engine. Keeping that assertion would have pinned a claim the
+    README can no longer truthfully make.
+    """
     text = normalized()
-    assert "does not yet render the production engine" in text
+    assert "GM-041.5 added the Engine Evaluation screen" in text
+    assert "does not yet render the production engine" not in text
+
+
+def test_the_readme_says_every_displayed_score_is_synthetic() -> None:
+    """The screen renders numbers, so the README must qualify them."""
+    text = normalized()
+    assert "Every score it shows is a synthetic demonstration" in text
+    assert "config/nonproduction/gm041_engine_synthetic.yaml" in text
+
+
+def test_the_readme_states_capture_remains_command_line_only() -> None:
+    text = normalized()
+    assert "Live game capture remains command-line only" in text
+    assert "already-published evidence bundles" in text
 
 
 # --------------------------------------------------------------------------
