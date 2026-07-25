@@ -40,8 +40,8 @@ Hub destinations:
 
 ## What it intentionally does NOT do
 
-- no automated scoring, grading, or classification of any kind (no betting
-  / PASS / AVOID, no recommendation, no betting output);
+- no automated scoring, grading, or classification of any kind: evaluation
+  only, no automated recommendation, no decision output;
 - no live provider request — archived runs only, verified read-only;
 - no full-slate aggregation; one run, one hitter, one game;
 - no weather, park factors, bullpen targeting, or Pitchers to Target;

@@ -651,7 +651,8 @@ def _limitations_document(
             "Ideal Attack Angle % is event-derived (5-20 inclusive over tracked "
             "attack-angle rows), not the official published leaderboard aggregate"
         ),
-        "no scoring, grading, or signal evaluation exists in this slice",
+        "no scoring or grading exists in this slice, and no decision output of "
+        "any kind is produced",
     ]
     if mode is CaptureMode.RETROSPECTIVE_RECONSTRUCTION:
         notes.insert(0, RETROSPECTIVE_DISCLAIMER)

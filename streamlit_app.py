@@ -96,8 +96,8 @@ def _sidebar(run_names: list[str]) -> str:
         st.divider()
         st.caption(
             "Manual scoring on the Manual Review screen is user-entered only: "
-            "not the GreenMachine scoring engine, not a recommendation, not a "
-            "betting signal."
+            "not the GreenMachine scoring engine, and not a recommendation of any "
+            "kind. Evaluation only — every decision is yours."
         )
     return str(selected)
 
@@ -335,8 +335,8 @@ def _render_manual_review(data: DashboardData) -> None:
     st.warning(
         f"**{MANUAL_REVIEW_DISCLAIMER}.** You assign every category yourself; the "
         f"app only adds the arithmetic and derives the frozen tier "
-        f"(S 10-12, A 8-9, B 6-7, C 4-5, D 0-3). No recommendation or betting "
-        f"signal is produced."
+        f"(S 10-12, A 8-9, B 6-7, C 4-5, D 0-3). No automated recommendation and "
+        f"no decision output is produced."
     )
     key_prefix = f"review::{data.run_name}::"
     score_columns = st.columns(len(CATEGORIES))

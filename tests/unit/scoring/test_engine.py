@@ -8,11 +8,12 @@ wrong-for-baseball values that can never be mistaken for the approved model
 
 from __future__ import annotations
 
+import decimal
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from gm041_engine_snapshots import engine_snapshot
+from gm041_engine_snapshots import DEFAULT_TOTAL, attack_angle_snapshot, engine_snapshot
 
 from greenmachine.config import (
     ConfigSemanticError,
@@ -26,9 +27,11 @@ from greenmachine.domain import (
     ComponentId,
     EvaluatedGradeResult,
     Grade,
+    InputSnapshot,
     MeasurementId,
     MissingReason,
     NotEvaluableGradeResult,
+    SampleType,
     ValidationInputId,
 )
 from greenmachine.evaluation import serialize_record
@@ -511,3 +514,430 @@ def test_identical_inputs_give_byte_identical_serialized_results(
     second = score_snapshot(engine_snapshot(), config)
     assert first == second
     assert serialize_record(first) == serialize_record(second)
+
+
+def _config_with_minimum(
+    config: GreenMachineConfig, component_id: ComponentId, minimum: int
+) -> GreenMachineConfig:
+    """The same configuration with one component's profile minimum replaced.
+
+    Built by model_copy rather than by editing YAML so the test targets exactly
+    one field and cannot accidentally depend on unrelated fixture text.
+    """
+    components = []
+    for component in config.components:
+        if component.component_id is not component_id:
+            components.append(component)
+            continue
+        profiles = tuple(
+            profile.model_copy(update={"minimum_sample_required": minimum})
+            for profile in component.profiles
+        )
+        components.append(component.model_copy(update={"profiles": profiles}))
+    return config.model_copy(update={"components": tuple(components)})
+
+
+# --------------------------------------------------------------------------
+# Snapshot / configuration coherence (independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# The snapshot's SampleStatus was decided by the ingestion layer against the
+# minimum stored ON THE OBSERVATION. Scoring under a configuration declaring a
+# different minimum would make every warning and audit line disagree with the
+# status the snapshot carries, so the engine refuses rather than reconciling.
+# It never recalculates, mutates, or replaces snapshot metadata.
+
+
+def test_a_configured_minimum_above_the_snapshot_minimum_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """Snapshot minimum 2, configuration minimum 999."""
+    snapshot = engine_snapshot(minimum_overrides={ComponentId.EXIT_VELOCITY: 2})
+    hostile = _config_with_minimum(config, ComponentId.EXIT_VELOCITY, 999)
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, hostile)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "minimum_sample_required" in message
+    assert "2" in message
+    assert "999" in message
+
+
+def test_a_configured_minimum_below_the_snapshot_minimum_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The inverse mismatch: snapshot minimum 999, configuration minimum 2."""
+    snapshot = engine_snapshot(minimum_overrides={ComponentId.EXIT_VELOCITY: 999})
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "minimum_sample_required" in message
+    assert "999" in message
+
+
+def test_a_present_observation_sample_type_mismatch_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = engine_snapshot(
+        sample_type_overrides={ComponentId.EXIT_VELOCITY: SampleType.PLATE_APPEARANCES}
+    )
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "sample_type" in message
+    assert "plate_appearances" in message
+    assert "batted_ball_events" in message
+
+
+def test_a_missing_observation_sample_type_mismatch_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """A missing observation carries no minimum, so only the sample type binds."""
+    snapshot = engine_snapshot(
+        missing={ComponentId.BAT_SPEED: MissingReason.TRACKING_UNAVAILABLE},
+        sample_type_overrides={ComponentId.BAT_SPEED: SampleType.GAMES},
+    )
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "bat_speed" in message
+    assert "sample_type" in message
+    assert "games" in message
+    assert "swings" in message
+
+
+def test_matching_metadata_continues_to_score_normally(config: GreenMachineConfig) -> None:
+    """Anti-vacuity: the guard must not reject the coherent default snapshot."""
+    result = score_snapshot(engine_snapshot(), config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    assert result.total_score == Decimal(DEFAULT_TOTAL)
+    assert result.grade is Grade.S
+
+
+def test_insufficient_warnings_survive_the_coherence_checks(
+    config: GreenMachineConfig,
+) -> None:
+    """An INSUFFICIENT sample is coherent: below the minimum, not disagreeing with it.
+
+    The component is still scored, and exactly one advisory warning names it.
+    """
+    snapshot = engine_snapshot(insufficient=[ComponentId.BARREL_PCT])
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    warnings = [
+        finding
+        for finding in result.validation_findings
+        if finding.input_id is ValidationInputId.SAMPLE_WARNINGS
+    ]
+    assert [finding.component_id for finding in warnings] == [ComponentId.BARREL_PCT]
+    barrel = next(
+        score for score in result.component_scores if score.component_id is ComponentId.BARREL_PCT
+    )
+    assert barrel.points_awarded > 0
+
+
+# --------------------------------------------------------------------------
+# One observation state per component (final independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# attack_angle_quality is satisfied by exactly one of two mutually exclusive
+# measurements (MODEL_SPEC §9.1), yet a structurally valid snapshot can carry a
+# record for each variant. The engine must count matches across BOTH the present
+# and missing collections and refuse anything other than exactly one -- never
+# selecting the first match, never letting present silently win over missing.
+# Otherwise an observation is left unscored while still travelling on the
+# returned result, unexplained by the audit derivation.
+
+_IDEAL = MeasurementId.IDEAL_ATTACK_ANGLE_PCT
+_PROXY = MeasurementId.ATTACK_ANGLE_THRESHOLD_PROXY
+
+
+def _refusal(snapshot: InputSnapshot, config: GreenMachineConfig) -> str:
+    """Score and require a typed refusal, returning the message.
+
+    Asserting `pytest.raises` also proves no partial result escaped: the call
+    raises instead of returning, so there is no GradeResult to inspect.
+    """
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+    message = str(caught.value)
+    assert "attack_angle_quality" in message
+    assert "exactly one observation state" in message
+    return message
+
+
+def test_two_present_attack_angle_measurements_are_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL, _PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "2 observation states" in message
+    assert "2 present, 0 missing" in message
+    assert _IDEAL.value in message
+    assert _PROXY.value in message
+
+
+def test_two_missing_attack_angle_measurements_are_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The gap the review found: the missing collection was never counted."""
+    snapshot = attack_angle_snapshot(missing_measurements=[_IDEAL, _PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "2 observation states" in message
+    assert "0 present, 2 missing" in message
+
+
+def test_a_present_ideal_plus_a_missing_proxy_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The present path must not silently take precedence over the missing one."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL], missing_measurements=[_PROXY])
+
+    message = _refusal(snapshot, config)
+
+    assert "1 present, 1 missing" in message
+
+
+def test_a_present_proxy_plus_a_missing_ideal_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = attack_angle_snapshot(present_measurements=[_PROXY], missing_measurements=[_IDEAL])
+
+    message = _refusal(snapshot, config)
+
+    assert "1 present, 1 missing" in message
+
+
+def test_reversing_two_missing_records_produces_the_same_refusal(
+    config: GreenMachineConfig,
+) -> None:
+    """Order independence: the engine no longer depends on which record is first."""
+    forward = _refusal(attack_angle_snapshot(missing_measurements=[_IDEAL, _PROXY]), config)
+    reversed_ = _refusal(attack_angle_snapshot(missing_measurements=[_PROXY, _IDEAL]), config)
+
+    assert "0 present, 2 missing" in forward
+    assert "0 present, 2 missing" in reversed_
+
+
+def test_a_single_present_ideal_attack_angle_still_scores(
+    config: GreenMachineConfig,
+) -> None:
+    """Anti-vacuity: the guard must not reject the ordinary single-record case."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL])
+
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    scored = next(
+        score
+        for score in result.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert scored.measurement_id is _IDEAL
+    assert scored.points_awarded == Decimal("0.8")
+    assert scored.bucket_hit is not None
+    assert scored.bucket_hit.lower_bound == Decimal("50")
+
+
+def test_a_single_present_proxy_measurement_still_scores(
+    config: GreenMachineConfig,
+) -> None:
+    """The proxy resolves through its OWN bucket set, never the ideal's.
+
+    The fixture puts the ideal threshold at 50 and the proxy threshold at 60, so
+    an observed 65 scores under both while an observed 55 scores only under the
+    ideal. Checking both values proves the measurement-specific buckets are
+    honoured rather than substituted (MODEL_SPEC §9.1).
+    """
+    scoring = score_snapshot(
+        attack_angle_snapshot(present_measurements=[_PROXY], value="65"), config
+    )
+    assert isinstance(scoring, EvaluatedGradeResult)
+    awarded = next(
+        score
+        for score in scoring.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert awarded.measurement_id is _PROXY
+    assert awarded.points_awarded == Decimal("0.8")
+
+    below = score_snapshot(attack_angle_snapshot(present_measurements=[_PROXY], value="55"), config)
+    assert isinstance(below, EvaluatedGradeResult)
+    zeroed = next(
+        score
+        for score in below.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert zeroed.measurement_id is _PROXY
+    assert zeroed.points_awarded == Decimal("0")
+    assert zeroed.bucket_hit is not None
+    assert zeroed.bucket_hit.upper_bound == Decimal("60")
+
+
+def test_a_single_missing_attack_angle_follows_its_missing_data_policy(
+    config: GreenMachineConfig,
+) -> None:
+    """One missing record is unambiguous and takes the configured policy."""
+    snapshot = attack_angle_snapshot(missing_measurements=[_IDEAL])
+
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    scored = next(
+        score
+        for score in result.component_scores
+        if score.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    )
+    assert scored.points_awarded == Decimal("0")
+    stages = [
+        entry.stage
+        for entry in result.audit_derivation
+        if entry.component_id is ComponentId.ATTACK_ANGLE_QUALITY
+    ]
+    assert "missing_recorded_zero" in stages
+
+
+def test_an_ambiguous_component_produces_no_partial_result(
+    config: GreenMachineConfig,
+) -> None:
+    """Nothing is returned, and no observation is mutated or discarded."""
+    snapshot = attack_angle_snapshot(present_measurements=[_IDEAL], missing_measurements=[_PROXY])
+    before_present = snapshot.present_observations
+    before_missing = snapshot.missing_observations
+
+    with pytest.raises(ScoringInputError):
+        score_snapshot(snapshot, config)
+
+    assert snapshot.present_observations == before_present
+    assert snapshot.missing_observations == before_missing
+
+
+# --------------------------------------------------------------------------
+# Decimal-context independence (final independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# ADR-0002 requires the engine to be a pure function of (snapshot,
+# configuration). Aggregation once summed with a bare `a + b`, which uses the
+# CALLER's mutable global Decimal context, so ambient precision and rounding
+# leaked into the score and the tier. Independently measured on this same
+# synthetic snapshot before the fix:
+#
+#   normal context             -> 11.55  tier S
+#   precision 1, ROUND_DOWN    ->  7     tier B
+#   precision 2, ROUND_UP      -> 12     tier S
+#   precision 3, ROUND_FLOOR   -> 11.5   tier S
+#
+# Both aggregation paths now go through greenmachine.common.numeric.add, which
+# runs under the project-local context. The engine never mutates the global one.
+
+_HOSTILE_CONTEXTS = (
+    pytest.param(1, decimal.ROUND_DOWN, id="precision-1-ROUND_DOWN"),
+    pytest.param(2, decimal.ROUND_UP, id="precision-2-ROUND_UP"),
+    pytest.param(3, decimal.ROUND_FLOOR, id="precision-3-ROUND_FLOOR"),
+)
+
+
+def _score_under(
+    precision: int, rounding: str, snapshot: InputSnapshot, config: GreenMachineConfig
+) -> EvaluatedGradeResult:
+    """Score inside a deliberately hostile caller context, restored on exit."""
+    with decimal.localcontext() as hostile:
+        hostile.prec = precision
+        hostile.rounding = rounding
+        result = score_snapshot(snapshot, config)
+    assert isinstance(result, EvaluatedGradeResult)
+    return result
+
+
+def test_the_normal_synthetic_result_is_exactly_11_55_and_tier_s(
+    config: GreenMachineConfig,
+) -> None:
+    """The reference the hostile-context cases are compared against."""
+    result = score_snapshot(engine_snapshot(), config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    assert result.total_score == Decimal("11.55")
+    assert result.grade is Grade.S
+
+
+@pytest.mark.parametrize(("precision", "rounding"), _HOSTILE_CONTEXTS)
+def test_a_hostile_caller_context_changes_no_part_of_the_result(
+    precision: int, rounding: str, config: GreenMachineConfig
+) -> None:
+    """Every output surface, not just the total: a partial match would hide a bug."""
+    snapshot = engine_snapshot()
+    baseline = score_snapshot(snapshot, config)
+    assert isinstance(baseline, EvaluatedGradeResult)
+
+    hostile = _score_under(precision, rounding, snapshot, config)
+
+    assert hostile.component_scores == baseline.component_scores
+    assert hostile.category_scores == baseline.category_scores
+    assert hostile.total_score == baseline.total_score
+    assert hostile.grade is baseline.grade
+    assert hostile.validation_findings == baseline.validation_findings
+    assert hostile.audit_derivation == baseline.audit_derivation
+    assert [observation.fallback_used for observation in hostile.present_observations] == [
+        observation.fallback_used for observation in baseline.present_observations
+    ]
+    assert hostile == baseline
+    assert serialize_record(hostile) == serialize_record(baseline)
+
+
+@pytest.mark.parametrize(("precision", "rounding"), _HOSTILE_CONTEXTS)
+def test_a_hostile_caller_context_preserves_the_exact_total_and_tier(
+    precision: int, rounding: str, config: GreenMachineConfig
+) -> None:
+    """The specific divergence the review measured, pinned by value."""
+    hostile = _score_under(precision, rounding, engine_snapshot(), config)
+
+    assert hostile.total_score == Decimal("11.55")
+    assert hostile.grade is Grade.S
+
+
+def test_scoring_does_not_modify_the_callers_decimal_context(
+    config: GreenMachineConfig,
+) -> None:
+    """The engine borrows the project context; it never edits the process-global one."""
+    context = decimal.getcontext()
+    precision_before = context.prec
+    rounding_before = context.rounding
+    traps_before = dict(context.traps)
+
+    score_snapshot(engine_snapshot(), config)
+
+    assert decimal.getcontext().prec == precision_before
+    assert decimal.getcontext().rounding == rounding_before
+    assert dict(decimal.getcontext().traps) == traps_before
+
+
+def test_scoring_leaves_a_hostile_caller_context_exactly_as_it_found_it(
+    config: GreenMachineConfig,
+) -> None:
+    """Restoration holds even when the caller's context is already unusual."""
+    with decimal.localcontext() as hostile:
+        hostile.prec = 2
+        hostile.rounding = decimal.ROUND_UP
+        traps_before = dict(hostile.traps)
+
+        score_snapshot(engine_snapshot(), config)
+
+        assert decimal.getcontext().prec == 2
+        assert decimal.getcontext().rounding == decimal.ROUND_UP
+        assert dict(decimal.getcontext().traps) == traps_before

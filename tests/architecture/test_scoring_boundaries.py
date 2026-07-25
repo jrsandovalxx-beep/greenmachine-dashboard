@@ -39,13 +39,23 @@ SCORING_ROOT = PACKAGE_ROOT / "scoring"
 SCORING_PACKAGE = "greenmachine.scoring"
 
 # Everything the engine is permitted to reach: the neutral vocabulary it grades,
-# the configuration that carries every threshold, and the error root. Provider
-# vocabulary, persistence, and presentation are all downstream or sideways.
+# the configuration that carries every threshold, the error root, and the
+# numeric policy. Provider vocabulary, persistence, and presentation are all
+# downstream or sideways.
+#
+# `greenmachine.common.numeric` is listed by MODULE, not as `greenmachine.common`
+# as a whole: the engine must sum under the project-local Decimal context
+# (ADR-0002) rather than the caller's mutable global one, and that is the only
+# thing it may reach into `common` for besides the error root. Widening this to
+# the whole package would silently admit the clock, serialization, and
+# identifier modules — the meta-tests at the bottom of this file prove the
+# approved module passes while its siblings stay rejected.
 APPROVED_INTERNAL = frozenset(
     {
         "greenmachine.domain",
         "greenmachine.config",
         "greenmachine.common.errors",
+        "greenmachine.common.numeric",
     }
 )
 
@@ -269,11 +279,37 @@ def test_meta_a_forbidden_internal_import_is_rejected(source: str) -> None:
         "from greenmachine.domain import InputSnapshot\n",
         "from greenmachine.config import GreenMachineConfig\n",
         "from greenmachine.common.errors import ErrorContext\n",
+        "from greenmachine.common.numeric import add\n",
         "from .errors import ScoringConfigError\n",
     ],
 )
 def test_meta_approved_imports_are_permitted(source: str) -> None:
     assert internal_offenders(seeded(source), SCORING_PACKAGE) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from greenmachine.common.clock import SystemClock\n",
+        "from greenmachine.common.serialization import canonical_bytes\n",
+        "from greenmachine.common.ids import content_digest\n",
+        "import greenmachine.common as common\n",
+    ],
+)
+def test_meta_an_unrelated_common_import_is_still_rejected(source: str) -> None:
+    """The numeric allowance is one module, not the whole ``common`` package.
+
+    ``greenmachine.common.numeric`` is approved so the engine can sum under the
+    project Decimal context (ADR-0002). Its siblings — the clock above all —
+    stay forbidden, so the allowance can never be read as opening ``common``.
+    """
+    assert internal_offenders(seeded(source), SCORING_PACKAGE)
+
+
+def test_meta_the_numeric_allowance_is_module_scoped_not_package_scoped() -> None:
+    """The allowlist names the module; the bare package is deliberately absent."""
+    assert "greenmachine.common.numeric" in APPROVED_INTERNAL
+    assert "greenmachine.common" not in APPROVED_INTERNAL
 
 
 def test_meta_a_pandas_import_is_rejected() -> None:

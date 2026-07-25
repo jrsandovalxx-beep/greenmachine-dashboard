@@ -5,7 +5,7 @@
 - Evidence bundle: `run_gm040_ohtani`
 - Model configuration: `gm041-engine-synthetic-0` (specification `v6.3`)
 
-The engine's entire output is Total Score, Tier, Component Breakdown, Audit Trail, Warnings, and Fallbacks. There is no signal, recommendation, or betting classification of any kind, and there never will be.
+The engine's entire output is Total Score, Tier, Component Breakdown, Audit Trail, Warnings, and Fallbacks. There is no automated recommendation and no decision output of any kind, and there never will be.
 
 ## LONG_TERM_2Y
 

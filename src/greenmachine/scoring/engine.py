@@ -8,6 +8,16 @@ explains itself in the ordered audit derivation — observed value, bucket
 bounds, points, reason, rule reference, and any fallback the ingestion layer
 recorded.
 
+**The scoring boundary requires exactly one observation state per applicable
+component**, counted across ``present_observations`` *and*
+``missing_observations`` together. Two present records, two missing records, one
+of each, or none at all are all refused with a typed ``ScoringInputError`` before
+any scoring or missing-data handling runs. Selecting the first match, or letting
+a present record win over a missing one, would silently leave an observation
+unscored while it still travelled on the returned result — unexplained by the
+audit derivation. The engine refuses rather than choosing, and never mutates or
+discards a snapshot observation.
+
 Execution follows ``MODEL_SPEC.md``:
 
 * §5.1 bucketed scoring — half-open ``[lower, upper)`` buckets over a declared
@@ -37,11 +47,12 @@ wagering, fantasy, or DFS decision belongs entirely to the user.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from greenmachine.common.errors import ErrorContext
+from greenmachine.common.numeric import add
 from greenmachine.config import (
     BinaryScoring,
     BucketedScoring,
@@ -129,38 +140,74 @@ def _plain(value: Decimal) -> str:
 
 
 # --------------------------------------------------------------------------
-# Present-observation resolution
+# Observation-state resolution: exactly one per applicable component,
+# counted across the present and missing collections together
 # --------------------------------------------------------------------------
 
 
-def _present_for_component(
+def _measurement_names(
+    observations: Sequence[MetricObservation | MissingObservation],
+) -> str:
+    """The measurement ids the matches represent, for the ambiguity message."""
+    names = [
+        observation.measurement_id.value if observation.measurement_id is not None else "none"
+        for observation in observations
+    ]
+    return ", ".join(names) if names else "none"
+
+
+def _resolve_observation(
     snapshot: InputSnapshot, component: ComponentConfig
-) -> MetricObservation | None:
-    matches = [
+) -> MetricObservation | MissingObservation:
+    """The single observation state representing this component, or fail closed.
+
+    A component is satisfied by **exactly one** observation state per evaluation,
+    counted across *both* collections. Two present observations, two missing
+    observations, and one of each are all ambiguous, and so is none at all.
+
+    Counting across both collections matters because the measurements of
+    ``attack_angle_quality`` are mutually exclusive (MODEL_SPEC §9.1) yet a
+    structurally valid snapshot can carry a record for each variant. Selecting
+    the first match — or letting a present record take precedence over a missing
+    one — would silently drop an observation that still travels on the returned
+    result, leaving a record the audit derivation never explains. That breaks
+    both the fail-closed rule and the complete-audit requirement, so the engine
+    refuses rather than choosing. Nothing is mutated or discarded.
+    """
+    present = [
         observation
         for observation in snapshot.present_observations
         if observation.component_id is component.component_id
     ]
-    if len(matches) > 1:
-        raise ScoringInputError(
-            f"component '{component.component_id.value}' has "
-            f"{len(matches)} present observations; the measurements are mutually "
-            f"exclusive and exactly one may satisfy a component per evaluation "
-            f"(MODEL_SPEC §9.1)",
-            ErrorContext(subject=component.component_id.value),
-        )
-    return matches[0] if matches else None
-
-
-def _missing_for_component(
-    snapshot: InputSnapshot, component: ComponentConfig
-) -> MissingObservation | None:
-    matches = [
+    missing = [
         observation
         for observation in snapshot.missing_observations
         if observation.component_id is component.component_id
     ]
-    return matches[0] if matches else None
+    total = len(present) + len(missing)
+
+    if total == 1:
+        return present[0] if present else missing[0]
+
+    if total == 0:
+        raise ScoringInputError(
+            f"configured component '{component.component_id.value}' has neither a "
+            f"present nor a missing observation on the snapshot; the snapshot and "
+            f"configuration disagree and nothing is guessed",
+            ErrorContext(subject=component.component_id.value),
+        )
+
+    everything: list[MetricObservation | MissingObservation] = [*present, *missing]
+    raise ScoringInputError(
+        f"component '{component.component_id.value}' is represented by {total} "
+        f"observation states ({len(present)} present, {len(missing)} missing; "
+        f"measurements: {_measurement_names(everything)}); exactly one observation "
+        f"state may represent a configured component during one evaluation, and the "
+        f"measurements are mutually exclusive (MODEL_SPEC §9.1). The engine refuses "
+        f"rather than selecting one and silently leaving the others unscored but "
+        f"present on the result",
+        ErrorContext(subject=component.component_id.value),
+    )
 
 
 def _profile_config(component: ComponentConfig, snapshot: InputSnapshot) -> ComponentProfileConfig:
@@ -294,6 +341,68 @@ def _predicate_holds(
         for comparison, result in checks
     )
     return holds, description
+
+
+# --------------------------------------------------------------------------
+# Snapshot / configuration coherence
+# --------------------------------------------------------------------------
+
+
+def _coherence_failure(
+    component: ComponentConfig,
+    field: str,
+    snapshot_value: object,
+    configured_value: object,
+) -> ScoringInputError:
+    """The one shaped message for every snapshot/configuration disagreement."""
+    return ScoringInputError(
+        f"component '{component.component_id.value}': snapshot {field} "
+        f"{snapshot_value!r} disagrees with the configured {field} "
+        f"{configured_value!r}; the engine scores a snapshot only under a "
+        f"configuration that describes it, and never recalculates, mutates, or "
+        f"replaces snapshot metadata",
+        ErrorContext(subject=component.component_id.value),
+    )
+
+
+def _require_present_coherence(
+    component: ComponentConfig,
+    profile_config: ComponentProfileConfig,
+    observation: MetricObservation,
+) -> None:
+    """Fail closed unless the observation's metadata matches the configuration.
+
+    ``sample_status`` was decided by the ingestion layer against the minimum
+    stored **on the observation**. Scoring under a configuration that declares a
+    different minimum would make every warning and audit line disagree with the
+    status the snapshot actually carries, so the disagreement is refused rather
+    than reconciled.
+    """
+    if observation.sample_type is not component.sample_type:
+        raise _coherence_failure(
+            component,
+            "sample_type",
+            observation.sample_type.value,
+            component.sample_type.value,
+        )
+    if observation.minimum_sample_required != profile_config.minimum_sample_required:
+        raise _coherence_failure(
+            component,
+            "minimum_sample_required",
+            observation.minimum_sample_required,
+            profile_config.minimum_sample_required,
+        )
+
+
+def _require_missing_coherence(component: ComponentConfig, observation: MissingObservation) -> None:
+    """A missing observation carries no minimum, so only the sample type binds."""
+    if observation.sample_type is not component.sample_type:
+        raise _coherence_failure(
+            component,
+            "sample_type",
+            observation.sample_type.value,
+            component.sample_type.value,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -483,9 +592,11 @@ def _category_scores(
                 f"this profile; an evaluated grade cannot carry an empty category",
                 ErrorContext(subject=allocation.category.value),
             )
-        total = _ZERO
-        for member in members:
-            total = total + member.points_awarded
+        # add() runs under the project-local Decimal context (ADR-0002). A bare
+        # `a + b` would use the caller's mutable global context, so a hostile or
+        # merely careless precision/rounding setting could change the total and
+        # the tier. The engine's determinism cannot depend on ambient state.
+        total = add(*(member.points_awarded for member in members))
         rendered = " + ".join(_plain(member.points_awarded) for member in members)
         audit.add(
             stage="category_aggregation",
@@ -621,25 +732,21 @@ def score_snapshot(
                 component_id=component.component_id,
             )
             continue
-        present = _present_for_component(snapshot, component)
-        if present is not None:
+        # Exactly one observation state, resolved across BOTH collections, before
+        # any scoring or missing-data handling runs.
+        observation = _resolve_observation(snapshot, component)
+        if isinstance(observation, MetricObservation):
             profile_config = _profile_config(component, snapshot)
-            score = _score_present(config, component, profile_config, present, audit)
+            _require_present_coherence(component, profile_config, observation)
+            score = _score_present(config, component, profile_config, observation, audit)
             outcomes.append(
                 _ComponentOutcome(
                     component_id=component.component_id, score=score, unavailable=None
                 )
             )
             continue
-        missing = _missing_for_component(snapshot, component)
-        if missing is None:
-            raise ScoringInputError(
-                f"configured component '{component.component_id.value}' has neither a "
-                f"present nor a missing observation on the snapshot; the snapshot and "
-                f"configuration disagree and nothing is guessed",
-                ErrorContext(subject=component.component_id.value),
-            )
-        outcomes.append(_handle_missing(config, component, missing, audit))
+        _require_missing_coherence(component, observation)
+        outcomes.append(_handle_missing(config, component, observation, audit))
 
     unconfigured = [
         observation.component_id.value
@@ -688,9 +795,9 @@ def score_snapshot(
     }
     category_scores = _category_scores(config, scores_by_component, audit)
 
-    total = _ZERO
-    for category_score in category_scores:
-        total = total + category_score.points_awarded
+    # Same policy as category aggregation: sum under the project context, never
+    # the caller's (ADR-0002).
+    total = add(*(score.points_awarded for score in category_scores))
     audit.add(
         stage="total_aggregation",
         rule_reference=_rule_ref(config, "allocations", "total_max_points"),
