@@ -1,9 +1,8 @@
-# GM-030 Streamlit Community Cloud runtime requirements.
-# Exactly the bounded runtime/UI dependencies the hosted app needs — the
-# project's runtime dependencies (pyproject.toml [project].dependencies) plus
-# the UI dependency (the [ui] extra). Development-only tools (pytest,
-# hypothesis, ruff, mypy, pre-commit) are deliberately absent: they install
-# via `pip install -e ".[dev,ui]"` for local work, never on the host.
+# GM-040-HF1 Streamlit Community Cloud runtime requirements.
+# Install the local GreenMachine project so importlib.metadata can resolve
+# the greenmachine distribution version on the host.
+-e .
+
 streamlit>=1.32,<2
 PyYAML>=6,<7
 pydantic>=2,<3
