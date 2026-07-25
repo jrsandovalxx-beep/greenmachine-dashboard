@@ -43,8 +43,7 @@ _DEFAULTS: dict[ComponentId, tuple[str, str, SampleType, int, int]] = {
 
 # With every default value, the synthetic fixture awards:
 # power 1.1+0.45+0.8=2.35 · matchup 1.6+1.5=3.1 · form 0.7+0.8+0.6=2.1 ·
-# pull 2.2 · environment 1+0.8=1.8 → total 11.55 → grade S → 5 strong
-# categories → STRONG_BET.
+# pull 2.2 · environment 1+0.8=1.8 → total 11.55 → grade S.
 DEFAULT_TOTAL = "11.55"
 
 
@@ -55,6 +54,8 @@ def engine_snapshot(
     insufficient: Collection[ComponentId] = (),
     absent: Collection[ComponentId] = (),
     aaq_measurement: MeasurementId = MeasurementId.IDEAL_ATTACK_ANGLE_PCT,
+    minimum_overrides: Mapping[ComponentId, int] | None = None,
+    sample_type_overrides: Mapping[ComponentId, SampleType] | None = None,
 ) -> InputSnapshot:
     """A frozen snapshot over the eleven GM-041 fixture components.
 
@@ -63,26 +64,35 @@ def engine_snapshot(
     below its configured minimum (still present, still scored, labeled
     INSUFFICIENT); ``absent`` removes the component's observation entirely
     (to prove the engine fails closed on snapshot/config disagreement).
+
+    ``minimum_overrides`` and ``sample_type_overrides`` deliberately
+    desynchronise an observation from the configuration that describes it, so
+    the coherence guard can be tested. They exist only to build snapshots the
+    engine must refuse; nothing in production produces one.
     """
     values = dict(values or {})
     missing = dict(missing or {})
+    minimum_overrides = dict(minimum_overrides or {})
+    sample_type_overrides = dict(sample_type_overrides or {})
     present_observations: list[MetricObservation] = []
     missing_observations: list[MissingObservation] = []
 
-    for component, (default_value, unit, sample_type, count, minimum) in _DEFAULTS.items():
+    for component, (value, unit, base_type, count, base_minimum) in _DEFAULTS.items():
         if component in absent:
             continue
+        sample_type = sample_type_overrides.get(component, base_type)
+        minimum = minimum_overrides.get(component, base_minimum)
         if component in missing:
             missing_observations.append(
                 synthetic_records.missing_observation(component, missing[component], sample_type)
             )
             continue
-        sample_count = minimum - 1 if component in insufficient else count
+        sample_count = base_minimum - 1 if component in insufficient else count
         measurement = aaq_measurement if component is ComponentId.ATTACK_ANGLE_QUALITY else None
         present_observations.append(
             synthetic_records.metric_observation(
                 component,
-                raw_value=values.get(component, default_value),
+                raw_value=values.get(component, value),
                 unit=unit,
                 sample_type=sample_type,
                 sample_count=sample_count,

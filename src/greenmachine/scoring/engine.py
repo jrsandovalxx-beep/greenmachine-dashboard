@@ -297,6 +297,68 @@ def _predicate_holds(
 
 
 # --------------------------------------------------------------------------
+# Snapshot / configuration coherence
+# --------------------------------------------------------------------------
+
+
+def _coherence_failure(
+    component: ComponentConfig,
+    field: str,
+    snapshot_value: object,
+    configured_value: object,
+) -> ScoringInputError:
+    """The one shaped message for every snapshot/configuration disagreement."""
+    return ScoringInputError(
+        f"component '{component.component_id.value}': snapshot {field} "
+        f"{snapshot_value!r} disagrees with the configured {field} "
+        f"{configured_value!r}; the engine scores a snapshot only under a "
+        f"configuration that describes it, and never recalculates, mutates, or "
+        f"replaces snapshot metadata",
+        ErrorContext(subject=component.component_id.value),
+    )
+
+
+def _require_present_coherence(
+    component: ComponentConfig,
+    profile_config: ComponentProfileConfig,
+    observation: MetricObservation,
+) -> None:
+    """Fail closed unless the observation's metadata matches the configuration.
+
+    ``sample_status`` was decided by the ingestion layer against the minimum
+    stored **on the observation**. Scoring under a configuration that declares a
+    different minimum would make every warning and audit line disagree with the
+    status the snapshot actually carries, so the disagreement is refused rather
+    than reconciled.
+    """
+    if observation.sample_type is not component.sample_type:
+        raise _coherence_failure(
+            component,
+            "sample_type",
+            observation.sample_type.value,
+            component.sample_type.value,
+        )
+    if observation.minimum_sample_required != profile_config.minimum_sample_required:
+        raise _coherence_failure(
+            component,
+            "minimum_sample_required",
+            observation.minimum_sample_required,
+            profile_config.minimum_sample_required,
+        )
+
+
+def _require_missing_coherence(component: ComponentConfig, observation: MissingObservation) -> None:
+    """A missing observation carries no minimum, so only the sample type binds."""
+    if observation.sample_type is not component.sample_type:
+        raise _coherence_failure(
+            component,
+            "sample_type",
+            observation.sample_type.value,
+            component.sample_type.value,
+        )
+
+
+# --------------------------------------------------------------------------
 # Component execution
 # --------------------------------------------------------------------------
 
@@ -624,6 +686,7 @@ def score_snapshot(
         present = _present_for_component(snapshot, component)
         if present is not None:
             profile_config = _profile_config(component, snapshot)
+            _require_present_coherence(component, profile_config, present)
             score = _score_present(config, component, profile_config, present, audit)
             outcomes.append(
                 _ComponentOutcome(
@@ -639,6 +702,7 @@ def score_snapshot(
                 f"configuration disagree and nothing is guessed",
                 ErrorContext(subject=component.component_id.value),
             )
+        _require_missing_coherence(component, missing)
         outcomes.append(_handle_missing(config, component, missing, audit))
 
     unconfigured = [

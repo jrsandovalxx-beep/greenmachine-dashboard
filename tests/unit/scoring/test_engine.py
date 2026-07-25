@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from gm041_engine_snapshots import engine_snapshot
+from gm041_engine_snapshots import DEFAULT_TOTAL, engine_snapshot
 
 from greenmachine.config import (
     ConfigSemanticError,
@@ -29,6 +29,7 @@ from greenmachine.domain import (
     MeasurementId,
     MissingReason,
     NotEvaluableGradeResult,
+    SampleType,
     ValidationInputId,
 )
 from greenmachine.evaluation import serialize_record
@@ -511,3 +512,135 @@ def test_identical_inputs_give_byte_identical_serialized_results(
     second = score_snapshot(engine_snapshot(), config)
     assert first == second
     assert serialize_record(first) == serialize_record(second)
+
+
+def _config_with_minimum(
+    config: GreenMachineConfig, component_id: ComponentId, minimum: int
+) -> GreenMachineConfig:
+    """The same configuration with one component's profile minimum replaced.
+
+    Built by model_copy rather than by editing YAML so the test targets exactly
+    one field and cannot accidentally depend on unrelated fixture text.
+    """
+    components = []
+    for component in config.components:
+        if component.component_id is not component_id:
+            components.append(component)
+            continue
+        profiles = tuple(
+            profile.model_copy(update={"minimum_sample_required": minimum})
+            for profile in component.profiles
+        )
+        components.append(component.model_copy(update={"profiles": profiles}))
+    return config.model_copy(update={"components": tuple(components)})
+
+
+# --------------------------------------------------------------------------
+# Snapshot / configuration coherence (independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# The snapshot's SampleStatus was decided by the ingestion layer against the
+# minimum stored ON THE OBSERVATION. Scoring under a configuration declaring a
+# different minimum would make every warning and audit line disagree with the
+# status the snapshot carries, so the engine refuses rather than reconciling.
+# It never recalculates, mutates, or replaces snapshot metadata.
+
+
+def test_a_configured_minimum_above_the_snapshot_minimum_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """Snapshot minimum 2, configuration minimum 999."""
+    snapshot = engine_snapshot(minimum_overrides={ComponentId.EXIT_VELOCITY: 2})
+    hostile = _config_with_minimum(config, ComponentId.EXIT_VELOCITY, 999)
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, hostile)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "minimum_sample_required" in message
+    assert "2" in message
+    assert "999" in message
+
+
+def test_a_configured_minimum_below_the_snapshot_minimum_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """The inverse mismatch: snapshot minimum 999, configuration minimum 2."""
+    snapshot = engine_snapshot(minimum_overrides={ComponentId.EXIT_VELOCITY: 999})
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "minimum_sample_required" in message
+    assert "999" in message
+
+
+def test_a_present_observation_sample_type_mismatch_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    snapshot = engine_snapshot(
+        sample_type_overrides={ComponentId.EXIT_VELOCITY: SampleType.PLATE_APPEARANCES}
+    )
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "exit_velocity" in message
+    assert "sample_type" in message
+    assert "plate_appearances" in message
+    assert "batted_ball_events" in message
+
+
+def test_a_missing_observation_sample_type_mismatch_is_refused(
+    config: GreenMachineConfig,
+) -> None:
+    """A missing observation carries no minimum, so only the sample type binds."""
+    snapshot = engine_snapshot(
+        missing={ComponentId.BAT_SPEED: MissingReason.TRACKING_UNAVAILABLE},
+        sample_type_overrides={ComponentId.BAT_SPEED: SampleType.GAMES},
+    )
+
+    with pytest.raises(ScoringInputError) as caught:
+        score_snapshot(snapshot, config)
+
+    message = str(caught.value)
+    assert "bat_speed" in message
+    assert "sample_type" in message
+    assert "games" in message
+    assert "swings" in message
+
+
+def test_matching_metadata_continues_to_score_normally(config: GreenMachineConfig) -> None:
+    """Anti-vacuity: the guard must not reject the coherent default snapshot."""
+    result = score_snapshot(engine_snapshot(), config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    assert result.total_score == Decimal(DEFAULT_TOTAL)
+    assert result.grade is Grade.S
+
+
+def test_insufficient_warnings_survive_the_coherence_checks(
+    config: GreenMachineConfig,
+) -> None:
+    """An INSUFFICIENT sample is coherent: below the minimum, not disagreeing with it.
+
+    The component is still scored, and exactly one advisory warning names it.
+    """
+    snapshot = engine_snapshot(insufficient=[ComponentId.BARREL_PCT])
+    result = score_snapshot(snapshot, config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    warnings = [
+        finding
+        for finding in result.validation_findings
+        if finding.input_id is ValidationInputId.SAMPLE_WARNINGS
+    ]
+    assert [finding.component_id for finding in warnings] == [ComponentId.BARREL_PCT]
+    barrel = next(
+        score for score in result.component_scores if score.component_id is ComponentId.BARREL_PCT
+    )
+    assert barrel.points_awarded > 0
