@@ -1,0 +1,45 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Data and runtime output. Nothing under data/ is source; it is generated,
+# fetched, or produced by a run and must never be committed.
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# Local overrides and secrets
+.env
+.env.*
+*.local.yaml
+*.local.yml
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Release archives are build artifacts, never source
+*.zip

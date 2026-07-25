@@ -1,0 +1,7 @@
+{
+  "case_id": "synthetic-recent-evaluated",
+  "config_version_identifier": "synthetic-fixture-0",
+  "expected_file": "expected_grade_result.json",
+  "snapshot_file": "input_snapshot.json",
+  "window_profile": "RECENT_7D"
+}
