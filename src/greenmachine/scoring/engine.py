@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from greenmachine.common.errors import ErrorContext
+from greenmachine.common.numeric import add
 from greenmachine.config import (
     BinaryScoring,
     BucketedScoring,
@@ -139,7 +140,8 @@ def _plain(value: Decimal) -> str:
 
 
 # --------------------------------------------------------------------------
-# Present-observation resolution
+# Observation-state resolution: exactly one per applicable component,
+# counted across the present and missing collections together
 # --------------------------------------------------------------------------
 
 
@@ -590,9 +592,11 @@ def _category_scores(
                 f"this profile; an evaluated grade cannot carry an empty category",
                 ErrorContext(subject=allocation.category.value),
             )
-        total = _ZERO
-        for member in members:
-            total = total + member.points_awarded
+        # add() runs under the project-local Decimal context (ADR-0002). A bare
+        # `a + b` would use the caller's mutable global context, so a hostile or
+        # merely careless precision/rounding setting could change the total and
+        # the tier. The engine's determinism cannot depend on ambient state.
+        total = add(*(member.points_awarded for member in members))
         rendered = " + ".join(_plain(member.points_awarded) for member in members)
         audit.add(
             stage="category_aggregation",
@@ -791,9 +795,9 @@ def score_snapshot(
     }
     category_scores = _category_scores(config, scores_by_component, audit)
 
-    total = _ZERO
-    for category_score in category_scores:
-        total = total + category_score.points_awarded
+    # Same policy as category aggregation: sum under the project context, never
+    # the caller's (ADR-0002).
+    total = add(*(score.points_awarded for score in category_scores))
     audit.add(
         stage="total_aggregation",
         rule_reference=_rule_ref(config, "allocations", "total_max_points"),

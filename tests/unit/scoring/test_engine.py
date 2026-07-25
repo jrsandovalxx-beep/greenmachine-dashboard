@@ -8,6 +8,7 @@ wrong-for-baseball values that can never be mistaken for the approved model
 
 from __future__ import annotations
 
+import decimal
 from decimal import Decimal
 from pathlib import Path
 
@@ -825,3 +826,118 @@ def test_an_ambiguous_component_produces_no_partial_result(
 
     assert snapshot.present_observations == before_present
     assert snapshot.missing_observations == before_missing
+
+
+# --------------------------------------------------------------------------
+# Decimal-context independence (final independent review, GM-041)
+# --------------------------------------------------------------------------
+#
+# ADR-0002 requires the engine to be a pure function of (snapshot,
+# configuration). Aggregation once summed with a bare `a + b`, which uses the
+# CALLER's mutable global Decimal context, so ambient precision and rounding
+# leaked into the score and the tier. Independently measured on this same
+# synthetic snapshot before the fix:
+#
+#   normal context             -> 11.55  tier S
+#   precision 1, ROUND_DOWN    ->  7     tier B
+#   precision 2, ROUND_UP      -> 12     tier S
+#   precision 3, ROUND_FLOOR   -> 11.5   tier S
+#
+# Both aggregation paths now go through greenmachine.common.numeric.add, which
+# runs under the project-local context. The engine never mutates the global one.
+
+_HOSTILE_CONTEXTS = (
+    pytest.param(1, decimal.ROUND_DOWN, id="precision-1-ROUND_DOWN"),
+    pytest.param(2, decimal.ROUND_UP, id="precision-2-ROUND_UP"),
+    pytest.param(3, decimal.ROUND_FLOOR, id="precision-3-ROUND_FLOOR"),
+)
+
+
+def _score_under(
+    precision: int, rounding: str, snapshot: InputSnapshot, config: GreenMachineConfig
+) -> EvaluatedGradeResult:
+    """Score inside a deliberately hostile caller context, restored on exit."""
+    with decimal.localcontext() as hostile:
+        hostile.prec = precision
+        hostile.rounding = rounding
+        result = score_snapshot(snapshot, config)
+    assert isinstance(result, EvaluatedGradeResult)
+    return result
+
+
+def test_the_normal_synthetic_result_is_exactly_11_55_and_tier_s(
+    config: GreenMachineConfig,
+) -> None:
+    """The reference the hostile-context cases are compared against."""
+    result = score_snapshot(engine_snapshot(), config)
+
+    assert isinstance(result, EvaluatedGradeResult)
+    assert result.total_score == Decimal("11.55")
+    assert result.grade is Grade.S
+
+
+@pytest.mark.parametrize(("precision", "rounding"), _HOSTILE_CONTEXTS)
+def test_a_hostile_caller_context_changes_no_part_of_the_result(
+    precision: int, rounding: str, config: GreenMachineConfig
+) -> None:
+    """Every output surface, not just the total: a partial match would hide a bug."""
+    snapshot = engine_snapshot()
+    baseline = score_snapshot(snapshot, config)
+    assert isinstance(baseline, EvaluatedGradeResult)
+
+    hostile = _score_under(precision, rounding, snapshot, config)
+
+    assert hostile.component_scores == baseline.component_scores
+    assert hostile.category_scores == baseline.category_scores
+    assert hostile.total_score == baseline.total_score
+    assert hostile.grade is baseline.grade
+    assert hostile.validation_findings == baseline.validation_findings
+    assert hostile.audit_derivation == baseline.audit_derivation
+    assert [observation.fallback_used for observation in hostile.present_observations] == [
+        observation.fallback_used for observation in baseline.present_observations
+    ]
+    assert hostile == baseline
+    assert serialize_record(hostile) == serialize_record(baseline)
+
+
+@pytest.mark.parametrize(("precision", "rounding"), _HOSTILE_CONTEXTS)
+def test_a_hostile_caller_context_preserves_the_exact_total_and_tier(
+    precision: int, rounding: str, config: GreenMachineConfig
+) -> None:
+    """The specific divergence the review measured, pinned by value."""
+    hostile = _score_under(precision, rounding, engine_snapshot(), config)
+
+    assert hostile.total_score == Decimal("11.55")
+    assert hostile.grade is Grade.S
+
+
+def test_scoring_does_not_modify_the_callers_decimal_context(
+    config: GreenMachineConfig,
+) -> None:
+    """The engine borrows the project context; it never edits the process-global one."""
+    context = decimal.getcontext()
+    precision_before = context.prec
+    rounding_before = context.rounding
+    traps_before = dict(context.traps)
+
+    score_snapshot(engine_snapshot(), config)
+
+    assert decimal.getcontext().prec == precision_before
+    assert decimal.getcontext().rounding == rounding_before
+    assert dict(decimal.getcontext().traps) == traps_before
+
+
+def test_scoring_leaves_a_hostile_caller_context_exactly_as_it_found_it(
+    config: GreenMachineConfig,
+) -> None:
+    """Restoration holds even when the caller's context is already unusual."""
+    with decimal.localcontext() as hostile:
+        hostile.prec = 2
+        hostile.rounding = decimal.ROUND_UP
+        traps_before = dict(hostile.traps)
+
+        score_snapshot(engine_snapshot(), config)
+
+        assert decimal.getcontext().prec == 2
+        assert decimal.getcontext().rounding == decimal.ROUND_UP
+        assert dict(decimal.getcontext().traps) == traps_before
