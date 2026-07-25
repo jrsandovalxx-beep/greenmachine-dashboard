@@ -22,8 +22,10 @@ from .dashboard_loader import (
     VERIFICATION_SCOPE_NOTE,
     DashboardLoadError,
     RunHandle,
+    VerifiedRun,
     discover_runs,
     load_dashboard,
+    load_verified_run,
 )
 from .dashboard_models import (
     AuditSection,
@@ -77,11 +79,13 @@ __all__ = [
     "ReviewContext",
     "RunHandle",
     "StatusBadge",
+    "VerifiedRun",
     "discover_runs",
     "export_review_csv",
     "export_review_json",
     "format_display_value",
     "load_dashboard",
+    "load_verified_run",
     "status_badge",
     "tier_for_total",
 ]

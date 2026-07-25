@@ -184,9 +184,17 @@ manual-review dashboard over approved archived runs, opening on an original Gree
 console-style landing hub. Read-only replay-verified loading with strict display adapters for
 audit reports, data-status colors only (no performance thresholds), user-entered manual scoring
 with deterministic exports, Whiff Rate excluded by ruling, pitcher-specific metrics deferred, no
-live capture, no recommendation. **The prototype does not yet render the production engine's
-evaluation** — surfacing score, tier, breakdown, and audit trail in the interface belongs to the
-later **GM-041.5 Stabilization & UX Review**. See
+live capture, no recommendation.
+
+**GM-041.5 added the Engine Evaluation screen**, the sixth hub destination. It renders the
+GM-041 engine's six outputs — Total Score, Tier, Component Breakdown, Audit Trail, Warnings,
+Fallbacks — for either window profile of an approved archived run. **Every score it shows is a
+synthetic demonstration**: it runs under `config/nonproduction/gm041_engine_synthetic.yaml`,
+because no production model configuration is approved while Q11–Q16 remain open. The screen
+states this above and beside every number, and produces no automated recommendation and no
+decision output. Live game capture remains command-line only; the dashboard displays
+already-published evidence bundles and never captures. The Manual Review worksheet stays
+entirely separate — nothing automated is ever written into it. See
 [docs/STREAMLIT_PROTOTYPE.md](docs/STREAMLIT_PROTOTYPE.md); launch with
 `streamlit run streamlit_app.py` after `pip install -e ".[dev,ui]"`.
 

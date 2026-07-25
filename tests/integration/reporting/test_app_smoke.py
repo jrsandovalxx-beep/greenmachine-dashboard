@@ -19,8 +19,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 APP_PATH = REPO_ROOT / "streamlit_app.py"
 SHIPPED_RUN = REPO_ROOT / "evidence" / "gm020_vertical_slice" / "prospective_run"
 
-_DESTINATIONS = ("overview", "metrics", "matchup", "audit", "review")
-_HUB_LABELS = ("OVERVIEW", "HITTER METRICS", "MATCHUP CONTEXT", "DATA AUDIT", "MANUAL REVIEW")
+# GM-041.5 added the sixth blade, Engine Evaluation, after Manual Review.
+_DESTINATIONS = ("overview", "metrics", "matchup", "audit", "review", "evaluate")
+_HUB_LABELS = (
+    "OVERVIEW",
+    "HITTER METRICS",
+    "MATCHUP CONTEXT",
+    "DATA AUDIT",
+    "MANUAL REVIEW",
+    "ENGINE EVALUATION",
+)
 
 
 def _fresh_app() -> AppTest:
@@ -71,7 +79,7 @@ def test_the_landing_hub_is_the_default_screen() -> None:
     assert not list(app.exception)
     assert not list(app.error)
     keys = [button.key for button in app.button]
-    assert keys == [f"nav_{screen}" for screen in _DESTINATIONS]  # five blades, no more
+    assert keys == [f"nav_{screen}" for screen in _DESTINATIONS]  # six blades, no more
     assert not any(button.key == "return_hub" for button in app.button)
     text = _rendered_text(app)
     for label in _HUB_LABELS:
@@ -89,6 +97,7 @@ def test_every_destination_opens_and_returns_home() -> None:
         "matchup": "Matchup Context",
         "audit": "Data Quality & Audit",
         "review": "Manual Review",
+        "evaluate": "Deterministic Engine Evaluation",
     }
     for screen in _DESTINATIONS:
         _open(app, screen)

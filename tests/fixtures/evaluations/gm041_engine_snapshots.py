@@ -1,7 +1,7 @@
 """Snapshot builders for GM-041 engine tests.
 
 Builds frozen RECENT_7D snapshots covering exactly the eleven components of
-``tests/fixtures/config/valid/gm041_engine_synthetic.yaml``, with per-test
+``config/nonproduction/gm041_engine_synthetic.yaml``, with per-test
 control over values, missing components, insufficient samples, absent
 observations, and the attack-angle measurement. Values default to the middle
 of known synthetic buckets so the expected derivation is easy to compute by

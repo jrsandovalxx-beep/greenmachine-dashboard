@@ -547,8 +547,92 @@ def _comparison_rows(
 # --------------------------------------------------------------------------
 
 
-def load_dashboard(handle: RunHandle) -> DashboardData:
-    """Verify one approved archived run read-only, then build its view models."""
+@dataclass(frozen=True, slots=True)
+class VerifiedRun:
+    """One replay-verified run: its view models plus both frozen snapshots.
+
+    The snapshots are named fields, not a mapping, so the profile a caller gets
+    is fixed by the attribute it reads rather than by a lookup that could miss.
+    ``__post_init__`` proves each field really holds its declared profile, that
+    the two are genuinely distinct records, and that they agree with the
+    dashboard view built from them — a mismatch here would mean the loader had
+    crossed two runs, which must fail loudly rather than score the wrong game.
+
+    This record deliberately carries **no scoring behaviour**. It is the
+    hand-off point: ``reporting`` produces verified domain records, and the
+    composition root decides what to do with them.
+    """
+
+    dashboard: DashboardData
+    recent_snapshot: InputSnapshot
+    long_term_snapshot: InputSnapshot
+
+    def __post_init__(self) -> None:
+        if self.recent_snapshot.window_profile is not WindowProfile.RECENT_7D:
+            raise DashboardLoadError(
+                f"VerifiedRun.recent_snapshot must carry RECENT_7D, got "
+                f"'{self.recent_snapshot.window_profile.value}'",
+                ErrorContext(subject=self.dashboard.run_name),
+            )
+        if self.long_term_snapshot.window_profile is not WindowProfile.LONG_TERM_2Y:
+            raise DashboardLoadError(
+                f"VerifiedRun.long_term_snapshot must carry LONG_TERM_2Y, got "
+                f"'{self.long_term_snapshot.window_profile.value}'",
+                ErrorContext(subject=self.dashboard.run_name),
+            )
+        if self.recent_snapshot.snapshot_id == self.long_term_snapshot.snapshot_id:
+            raise DashboardLoadError(
+                "the two profile snapshots share a snapshot_id; one run produces "
+                "two independently frozen snapshots, never one reused",
+                ErrorContext(subject=self.dashboard.run_name),
+            )
+        if self.recent_snapshot.input_hash == self.long_term_snapshot.input_hash:
+            raise DashboardLoadError(
+                "the two profile snapshots share an input_hash; their observations "
+                "must differ because their windows differ",
+                ErrorContext(subject=self.dashboard.run_name),
+            )
+        self._require_coherent_identity()
+
+    def _require_coherent_identity(self) -> None:
+        """Both snapshots describe the same subject as the dashboard header."""
+        header = self.dashboard.header
+        for label, snapshot in (
+            ("recent_snapshot", self.recent_snapshot),
+            ("long_term_snapshot", self.long_term_snapshot),
+        ):
+            if snapshot.batter.player_id.value != header.batter_id:
+                raise DashboardLoadError(
+                    f"{label} describes batter '{snapshot.batter.player_id.value}' but "
+                    f"the dashboard header describes '{header.batter_id}'",
+                    ErrorContext(subject=self.dashboard.run_name),
+                )
+            if snapshot.game_context.game_id.value != header.game_id:
+                raise DashboardLoadError(
+                    f"{label} describes game '{snapshot.game_context.game_id.value}' but "
+                    f"the dashboard header describes '{header.game_id}'",
+                    ErrorContext(subject=self.dashboard.run_name),
+                )
+        if self.recent_snapshot.source_capture_id != self.long_term_snapshot.source_capture_id:
+            raise DashboardLoadError(
+                "the two profile snapshots come from different source captures; "
+                "one run is exactly one capture",
+                ErrorContext(subject=self.dashboard.run_name),
+            )
+
+
+def load_verified_run(handle: RunHandle) -> VerifiedRun:
+    """Verify one approved archived run read-only, then build its view models.
+
+    Performs **exactly one** replay-verification path and deserializes each
+    frozen snapshot **exactly once**, then returns both the view models and the
+    snapshots themselves. The snapshots are the immutable GM-006 domain records
+    the composition root needs to run the pure grading engine; handing them back
+    here is what lets ``streamlit_app.py`` score a run without ``reporting`` ever
+    importing ``greenmachine.scoring`` (or ``greenmachine.config``).
+
+    Nothing is written, and no snapshot is copied or rebuilt.
+    """
     reader = bundle_reader(handle.directory)
     result: ReplayResult = replay_run(reader)
     if not result.byte_identical:
@@ -749,7 +833,7 @@ def load_dashboard(handle: RunHandle) -> DashboardData:
         ),
     )
 
-    return DashboardData(
+    dashboard = DashboardData(
         run_name=handle.name,
         header=header,
         integrity=integrity,
@@ -759,3 +843,17 @@ def load_dashboard(handle: RunHandle) -> DashboardData:
         pitcher_context=pitcher_context,
         audit=audit,
     )
+    return VerifiedRun(
+        dashboard=dashboard,
+        recent_snapshot=recent_snapshot,
+        long_term_snapshot=long_snapshot,
+    )
+
+
+def load_dashboard(handle: RunHandle) -> DashboardData:
+    """The view models alone, for callers that do not need the snapshots.
+
+    Backward-compatible with every pre-GM-041.5 caller; it is exactly the
+    ``dashboard`` field of :func:`load_verified_run`.
+    """
+    return load_verified_run(handle).dashboard

@@ -4,9 +4,11 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-25 (revision 8), on
-`feature/gm041-production-grading-engine-mainline`. **GM-041 is COMPLETE, with
-four independent review passes applied, and awaiting final review.**
+Last updated: 2026-07-25 (revision 9), on
+`feature/gm041-5-stabilization-ux-review`. **GM-041 is APPROVED AND MERGED**
+(`origin/main` at `28727fa`). **GM-041.5 — Stabilization & UX Review — is
+COMPLETE and awaiting review**: the engine's evaluation is now visible in the
+Streamlit console under a disclaimed non-production configuration.
 The signal-removal amendment is implemented, snapshot/configuration coherence
 is enforced, the sample evaluation is generated, all gates are green, and the
 work sits on a branch grafted cleanly onto `origin/main`. See §12 for the
@@ -102,7 +104,8 @@ reviewed and **FROZEN** unless marked otherwise.
 | GM-030 (+r1, r2) | FROZEN / deployed | Streamlit manual-review prototype + console hub + deployment readiness |
 | GM-040 | Delivered, pending independent review | Operator workflow over the unchanged pipeline + live Ohtani evidence |
 | GM-040-HF1 | Delivered hotfix | `-e .` in requirements.txt so Community Cloud installs the project |
-| GM-041 | **COMPLETE, awaiting review** (see §12) | First production deterministic grading engine (pure, config-driven) + betting-classification removal |
+| GM-041 | **APPROVED and MERGED** into `origin/main` (`28727fa`) | First production deterministic grading engine (pure, config-driven) + betting-classification removal |
+| GM-041.5 | **COMPLETE, awaiting review** (this branch; see §12a) | Engine evaluation surfaced in the Streamlit console + UX stabilization |
 
 **GM-020 — ingestion vertical slice.** Objective: one real game/hitter/pitcher
 from live providers to two frozen snapshots with deterministic replay.
@@ -385,7 +388,7 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,499 tests green (rev 8) across
+`streamlit_app.py`; evidence ships in-repo. 3,581 tests green (rev 9) across
 hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
@@ -596,7 +599,7 @@ about what GreenMachine currently does. Removing or reconciling it remains a
 
 ---
 
-## 12. CURRENT MILESTONE — GM-041 — **COMPLETE, AWAITING REVIEW**
+## 12. PREVIOUS MILESTONE — GM-041 — **APPROVED AND MERGED**
 
 **Branch:** `feature/gm041-production-grading-engine-mainline` (grafted onto
 `origin/main`; see §11a).
@@ -642,7 +645,7 @@ Product-Owner-ruled removal of every betting classification.
   additive identity), each with a meta-test proving it bites. `scoring` left
   the placeholder lists in `test_ingestion_boundaries.py` and
   `test_documentation_integrity.py`.
-- `tests/fixtures/config/valid/gm041_engine_synthetic.yaml` and
+- `config/nonproduction/gm041_engine_synthetic.yaml` and
   `tests/fixtures/evaluations/gm041_engine_snapshots.py`.
 - `scripts/generate_gm041_sample_evaluation.py` → `docs/samples/` (§12a).
 
@@ -671,6 +674,108 @@ trail. The four components the GM-020 pipeline cannot yet supply —
 `record_missing` zeros with their reason on the record, and the
 `attack_angle_quality` fallback provenance is surfaced. **These numbers are
 demonstration only and say nothing about the hitter.**
+
+## 12a. CURRENT MILESTONE — GM-041.5 — **COMPLETE, AWAITING REVIEW**
+
+**Branch:** `feature/gm041-5-stabilization-ux-review`, from `origin/main`
+`28727fa`.
+
+**Objective:** surface the GM-041 deterministic engine's evaluation in the
+existing Streamlit console while stabilizing the experience — without turning
+the console into anything that advises.
+
+**Delivered:**
+
+- **Engine Evaluation screen** (sixth hub destination, after Manual Review).
+  Renders the six approved outputs — Total Score, Tier, Component Breakdown,
+  Audit Trail, Warnings, Fallbacks — for either window profile of an approved
+  archived run. Every category and component appears in deterministic order with
+  exact Decimal text (never `float`), missing components show their recorded
+  reason, the audit trail renders all entries with contiguous sequence numbering,
+  and fallback provenance lists every higher-priority ineligible method with its
+  reason. A `NotEvaluableGradeResult` renders as a distinct terminal state with
+  no total and no tier — never as zero or tier D.
+- **Synthetic-configuration disclosure.** Every displayed score runs under
+  `config/nonproduction/gm041_engine_synthetic.yaml`. The screen states this at
+  the top, beside the total and tier (including as metric help text), and again
+  below the result, and shows the version identifier, semantic `config_hash`,
+  and source digest.
+- **`reporting.load_verified_run`** returning a frozen `VerifiedRun`
+  (`dashboard`, `recent_snapshot`, `long_term_snapshot`) from exactly one
+  replay-verification pass, each snapshot deserialized once. `__post_init__`
+  refuses a swapped profile, a reused snapshot, and snapshots crossed in from a
+  different run. `load_dashboard` delegates to it and is unchanged for callers.
+- **Configuration relocated byte-for-byte** out of `tests/fixtures/` (§12b).
+- **Lazy configuration load.** The file is read only when the Evaluation screen
+  opens, so a missing, unreadable, or invalid configuration renders a focused
+  *Evaluation unavailable* error — never *Archived run could not be verified* —
+  with the typed error category, no partial result, no traceback, no absolute
+  path, and every other screen still working.
+
+**How the layering survives.** `streamlit_app.py` is the only place the three
+layers meet: `reporting` returns verified domain snapshots, `config` loads the
+disclaimed configuration, and the pure `scoring.score_snapshot` combines them.
+`reporting` imports neither `scoring` nor `config`, proven by guards.
+
+**Caching.** One `@st.cache_resource` boundary for the verified run, keyed on
+run name and resolved directory — the same boundary as before, so replay
+verification is never skipped. Scoring itself is pure and cheap and runs on each
+rerun, which avoids a second cache whose key could omit something.
+
+**Expected values under the synthetic configuration** (deterministic, asserted):
+
+| Bundle | RECENT_7D | LONG_TERM_2Y |
+|---|---|---|
+| `prospective_run` (Devers) | `2.9` / D | `4.55` / C |
+| `run_gm040_ohtani` (Ohtani) | `5.15` / C | `7.1` / B |
+
+Twenty ordered audit entries per profile. **All synthetic demonstrations.**
+
+**Verified:** 3,581 passed / 5 skipped across hash seeds 0/1/42; all gates
+clean; both evidence bundles replay byte-identically; the committed sample JSON
+and Markdown are byte-identical at `960a0106…` and `af804228…`.
+
+### 12b. The non-production configuration location
+
+Moved byte-for-byte from `tests/fixtures/config/valid/` to the single canonical
+path `config/nonproduction/gm041_engine_synthetic.yaml`, so the deployed
+application never reads an executable configuration out of the test tree. **No
+second copy exists.** Verified unchanged across the move:
+
+| Property | Value |
+|---|---|
+| source digest | `51dac8cccfbba66d69a9dd6b744f4f077ecb1a37bdbaf7185242f0c224a5ece5` |
+| semantic `config_hash` | `4502a00bc2f44deb9f79cae5f5439f49fe4e9dac3d2c7f169576013a9fc636a4` |
+| version identifier | `gm041-engine-synthetic-0` |
+
+The GM-003 location guards now permit `config/nonproduction/` alongside
+`tests/fixtures/`, and additionally require every configuration there to
+announce itself as synthetic and non-production. `GREENMACHINE_SYNTHETIC_CONFIG`
+overrides the path for tests and deployment, mirroring the existing
+`GREENMACHINE_EVIDENCE_ROOT`.
+
+### 12c. Standing statements this milestone makes explicit
+
+- Evaluations are now **visible in Streamlit**.
+- The configuration behind them is **synthetic and non-production**; no
+  production model configuration exists while Q11–Q16 remain open.
+- **Live game capture is still command-line only.** The dashboard displays
+  already-published evidence bundles and never captures.
+- **No automated recommendation or decision output exists**, anywhere.
+- The Manual Review worksheet stays separate; nothing automated is written into
+  it, and there is no copy-to-worksheet control.
+
+### 12d. Known UX finding, not fixed by this ticket
+
+Streamlit resets a widget whose element was not rendered on the current run, so
+a Manual Review entry does not survive navigating away and back — through
+**any** screen, Overview and Data Audit included. This predates GM-041.5 and is
+not caused by the evaluation screen; a test asserts the evaluation screen
+behaves identically to an existing screen rather than pinning a persistence
+guarantee the app has never made. Making worksheet entries durable would be a
+deliberate scope decision.
+
+---
 
 ## 13. FUTURE ROADMAP
 
@@ -740,7 +845,7 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,499 passed as of rev 8, plus
+3. `python -m pytest -q` — expect fully green (3,581 passed as of rev 9, plus
    five Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
@@ -758,7 +863,7 @@ orchestration `src/greenmachine/ingestion/orchestration.py`; evidence root
 `run_gm040_ohtani`); goldens `tests/golden/cases/`; synthetic sample policy
 `tests/fixtures/ingestion/gm020_nonproduction_sample_policy.json`; synthetic
 engine config (GM-041)
-`tests/fixtures/config/valid/gm041_engine_synthetic.yaml` with snapshot
+`config/nonproduction/gm041_engine_synthetic.yaml` with snapshot
 builders in `tests/fixtures/evaluations/gm041_engine_snapshots.py`; scoring
 purity guards `tests/architecture/test_scoring_boundaries.py`; sample
 evaluation `docs/samples/gm041_sample_evaluation.{json,md}` generated by
@@ -797,6 +902,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 9 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 Stabilization & UX Review.** GM-041 was approved and merged (`origin/main` `28727fa`); this branch starts there. Added the **Engine Evaluation** screen as the sixth hub destination, rendering the GM-041 engine's six outputs — Total Score, Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks — for either window profile of an approved archived run, with evaluated and not-evaluable rendering as structurally distinct states (a not-evaluable result never becomes zero or tier D). Added `reporting.load_verified_run` returning a frozen `VerifiedRun` (view models plus both frozen snapshots) from exactly one replay pass with each snapshot deserialized once, validating profile placement, distinct identities, and identity coherence with the dashboard header; `load_dashboard` delegates to it unchanged. This is what keeps `reporting` free of `scoring` and `config` imports while the composition root scores — proven by new architecture guards. Relocated the disclaimed synthetic configuration **byte-for-byte** to `config/nonproduction/gm041_engine_synthetic.yaml` with no second copy, verified identical by source digest, semantic `config_hash`, and version identifier (§12b); the GM-003 location guards now permit that directory and additionally require every configuration there to announce itself non-production. Configuration is loaded lazily on entering the screen, so a missing or invalid file renders a focused *Evaluation unavailable* error with the typed category — never *Archived run could not be verified* — with no partial result, no traceback, no absolute path, and every other screen still working. Documentation updated across README, `STREAMLIT_PROTOTYPE.md`, and the CHANGELOG to state that evaluations are visible, the configuration is synthetic and non-production, live capture remains command-line only, the dashboard displays already-published bundles, no production configuration exists while Q11–Q16 are open, and no automated recommendation or decision output exists. Recorded a pre-existing UX finding in §12d (Streamlit resets unrendered widget state, so worksheet entries do not survive navigation through *any* screen) and asserted parity rather than pinning a guarantee the app never made. Verified: 3,581 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically, committed sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`. No frozen contract changed. |
 | 8 | 2026-07-25 | this commit, on `feature/gm041-production-grading-engine-mainline` | **GM-041 Decimal-context determinism correction.** Both scoring aggregation paths summed with a bare `total = total + points`, which evaluates under the **caller's mutable global Decimal context** rather than the project-local one — a direct ADR-0002 violation. Reproduced before fixing on the same synthetic snapshot and configuration: normal context `11.55` / tier S; precision 1 with `ROUND_DOWN` → `7` / tier **B**; precision 2 with `ROUND_UP` → `12` / tier S; precision 3 with `ROUND_FLOOR` → `11.5` / tier S. A tier moved from S to B on identical inputs. Both paths now sum through `greenmachine.common.numeric.add`, which runs under the project context (precision 28, ROUND_HALF_EVEN); the process-global context is never modified or replaced. The scoring architecture allowlist gained `greenmachine.common.numeric` **by module**, deliberately not `greenmachine.common` as a package, with meta-tests proving the approved module passes while the clock, serialization, and identifier siblings stay rejected and that the allowlist entry is module-scoped. Fifteen new tests: the normal result pinned at exactly `11.55` / S; three hostile contexts each compared against the baseline across component scores, category scores, total, tier, warnings, fallbacks, the ordered audit derivation, whole-record equality, and serialized bytes; the same three pinned by value; and two proving `score_snapshot()` leaves the caller's precision, rounding, and traps untouched — including when the caller's context is already unusual. Also corrected the stale `Present-observation resolution` heading in `engine.py` to describe resolution across both collections. **No serialized output changed**: the goldens are untouched and the committed sample files remain byte-identical at `960a0106…` (JSON) and `af804228…` (Markdown). Verified at this commit: 3,499 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically from a clean clone, sample generation byte-identical across two external-directory runs. Frozen domain contracts, evaluation schema v1, evidence bundles, Q11–Q16, `.gitattributes`, and the nested noncanonical tree are all untouched; the Windows line-ending defect (§9) remains deferred. |
 | 7 | 2026-07-25 | this commit, on `feature/gm041-production-grading-engine-mainline` | **GM-041 scoring-ambiguity correction (final independent review).** The engine rejected two PRESENT observations for one component but not two MISSING ones, nor one present plus one missing: `_missing_for_component()` returned the first match and the present path took precedence without consulting the missing collection. Reproduced before fixing — a snapshot carrying a present `ideal_attack_angle_pct` **and** a missing `attack_angle_threshold_proxy` scored 11.55 / tier S while the missing record was silently unscored yet still travelled on the returned result, with only one attack-angle entry in the audit derivation. That breaks both the fail-closed rule and the complete-audit requirement. Fixed by replacing `_present_for_component`/`_missing_for_component` with a single `_resolve_observation()` that collects matches across **both** collections and requires exactly one total, raising a typed `ScoringInputError` naming the component id, the present count, the missing count, and the measurement ids represented. The pre-existing zero-match refusal is folded into the same resolver, so the guard runs before scoring or missing-data handling and nothing is selected, prioritised, mutated, or discarded. Enforced at the scoring boundary only — the frozen domain contracts are unchanged. Nine new engine tests cover two present variants, two missing variants, both present-plus-missing orientations, order reversal of two missing records (proving first-match independence), single present ideal and single present proxy still scoring through their own measurement-specific buckets (ideal threshold 50, proxy threshold 60), a single missing record still following its configured missing-data policy, and the absence of any partial result or observation mutation on refusal. Engine module documentation states the invariant. The committed sample evaluation is byte-unchanged, as expected — the correction does not alter any valid input. Verified at this commit: 3,484 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically from a clean clone. `.gitattributes` untouched; the Windows line-ending defect (§9) remains deferred. |
 | 6 | 2026-07-25 | this commit, on `feature/gm041-production-grading-engine-mainline` | **GM-041 documentation correction.** The canonical root `README.md` was stale in every current-facing claim and is rewritten: it had said the grading engine is not implemented, that GreenMachine assigns "a grade and a signal", that `STRONG_BET`/`LEAN`/`PASS`/`AVOID` are outputs, that validation may alter a grade or signal, that the audit output includes "the signal rule that fired", that `scoring` is placeholder-only, that Phase 3 includes a signal engine, and that model-configuration changes include signals. It now states that GM-041 implements the deterministic production grading engine; that no production model configuration is approved and every executable configuration and sample score is synthetic; that the output is exactly Total Score, Tier, Component Breakdown, Audit Trail, Warnings, and Fallbacks; that GreenMachine produces no automated recommendation or decision output and separates evaluation from decision-making; that `features` and `cli` remain placeholders while `scoring` is implemented; that the Streamlit prototype does not yet render the production engine's evaluation, which belongs to GM-041.5; and the sequence GM-041 → GM-041.5 → GM-042. Betting-oriented wording such as "potential edges" was replaced with neutral research language. §1 of this handoff dropped its stale future tense ("is being implemented", "will carry"). §11a gained a binding **"Which tree is canonical"** statement: the repository-root project is the current canonical implementation, and the nested `greenmachine/` tree is a preserved, noncanonical duplicate holding stale historical content that must not be used for development, review, deployment decisions, or product-status interpretation — removing it stays a separate repository-cleanup ticket. A new `tests/unit/docs/test_readme_currency.py` protects the root README against regression on each retired claim and asserts the separation-of-concerns statements, scoped to the canonical README only so historical documents and the preserved duplicate are untouched. No source behavior changed; `.gitattributes` was not modified and the Windows evidence line-ending defect (§9) remains deferred. Verified at this commit: 3,475 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically from a clean clone. |

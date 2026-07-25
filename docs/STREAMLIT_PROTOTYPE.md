@@ -37,11 +37,34 @@ Hub destinations:
   identity/timing/replay/policy sections.
 - **MANUAL REVIEW** — user-entered category scores, notes, deterministic
   JSON/CSV export.
+- **ENGINE EVALUATION** (GM-041.5) — the GM-041 deterministic grading engine's
+  six outputs (Total Score, Tier, Component Breakdown, Audit Trail, Warnings,
+  Fallbacks) for either window profile, under a **synthetic, non-production
+  configuration** loaded from `config/nonproduction/`. Evaluated and
+  not-evaluable results render as structurally different states; a
+  configuration or scoring failure renders "Evaluation unavailable" and leaves
+  every other screen working.
+
+### How the evaluation is composed
+
+`streamlit_app.py` is the only place the three layers meet. `reporting`
+supplies a replay-verified `VerifiedRun` (view models **plus** both frozen
+`InputSnapshot`s), `config` loads the disclaimed configuration lazily when the
+screen opens, and the pure `scoring.score_snapshot` turns those two immutable
+values into a `GradeResult`. `reporting` never imports `scoring` or `config`,
+so the layering rule is preserved and enforced by architecture tests.
 
 ## What it intentionally does NOT do
 
-- no automated scoring, grading, or classification of any kind: evaluation
-  only, no automated recommendation, no decision output;
+- no automated **recommendation** or decision output of any kind — the Engine
+  Evaluation screen displays a derivation, never advice;
+- **no production model configuration** — every displayed score is a synthetic
+  demonstration of engine behaviour and evaluates no hitter under an approved
+  model, while Q11–Q16 remain open;
+- no live provider capture from the interface — capture is command-line only,
+  and the dashboard renders already-published evidence bundles;
+- no automated value written into the Manual Review worksheet, and no
+  copy-to-worksheet control;
 - no live provider request — archived runs only, verified read-only;
 - no full-slate aggregation; one run, one hitter, one game;
 - no weather, park factors, bullpen targeting, or Pitchers to Target;

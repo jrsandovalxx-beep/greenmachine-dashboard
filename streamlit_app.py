@@ -3,11 +3,19 @@
 The ONLY module that imports Streamlit. Everything rendered comes from the
 provider-neutral view models in ``greenmachine.reporting``, built over
 approved archived GM-020 runs through the read-only replay/integrity path.
-No provider network request, no write to any archived run, no automated
-scoring, no recommendation.
+No provider network request, no write to any archived run, and no automated
+recommendation or decision output of any kind.
+
+GM-041.5 adds the **Engine Evaluation** screen. This composition root is the
+only place permitted to combine the three pieces: ``reporting`` hands back a
+replay-verified run (view models **plus** both frozen snapshots), ``config``
+loads the disclaimed non-production configuration, and the pure
+``scoring.score_snapshot`` turns those two immutable values into a
+``GradeResult``. ``reporting`` itself never imports ``scoring`` or ``config``,
+so the layering rule survives.
 
 Navigation is shallow: an original GreenMachine console-style **landing hub**
-(the default screen) opens one of five content screens, each with a
+(the default screen) opens one of six content screens, each with a
 return-to-hub control. The stylized hub carries the console aesthetic;
 content screens keep the dark-green identity with a calmer layout. All
 styling is local generated CSS (see ``hub_theme.py``) — no remote font,
@@ -29,7 +37,22 @@ if str(_SRC_ROOT) not in sys.path:  # Community Cloud runs without installation
 
 from hub_theme import BASE_THEME_CSS, HUB_CSS, HUB_HEADER_HTML  # noqa: E402
 
-from greenmachine.common.errors import GreenMachineError  # noqa: E402
+from greenmachine.common.errors import (  # noqa: E402
+    ConfigurationError,
+    ErrorContext,
+    GreenMachineError,
+)
+from greenmachine.config import (  # noqa: E402
+    ConfigParseError,
+    VersionedConfiguration,
+    load_versioned_config,
+)
+from greenmachine.domain import (  # noqa: E402
+    EvaluatedGradeResult,
+    GradeResult,
+    InputSnapshot,
+    WindowProfile,
+)
 from greenmachine.reporting import (  # noqa: E402
     CATEGORIES,
     COLOR_LEGEND,
@@ -40,12 +63,14 @@ from greenmachine.reporting import (  # noqa: E402
     MetricCard,
     ReviewContext,
     RunHandle,
+    VerifiedRun,
     discover_runs,
     export_review_csv,
     export_review_json,
-    load_dashboard,
+    load_verified_run,
     status_badge,
 )
+from greenmachine.scoring import ScoringError, score_snapshot  # noqa: E402
 
 # The configured evidence root: repository-relative by default, overridable
 # only through deployment configuration (an environment variable set by the
@@ -58,13 +83,35 @@ EVIDENCE_ROOT = (
     else _REPO_ROOT / "evidence" / "gm020_vertical_slice"
 )
 
-# The five hub destinations: (state key, hub label, screen heading).
+# The canonical NON-PRODUCTION configuration. No approved production model
+# configuration exists (Q11-Q16 open), so this is the only executable one, and
+# every surface that displays its numbers says so. It lives outside tests/ so
+# the deployed app never reads from the test tree.
+_CONFIG_OVERRIDE = os.environ.get("GREENMACHINE_SYNTHETIC_CONFIG", "")
+SYNTHETIC_CONFIG_PATH = (
+    Path(_CONFIG_OVERRIDE).resolve()
+    if _CONFIG_OVERRIDE
+    else _REPO_ROOT / "config" / "nonproduction" / "gm041_engine_synthetic.yaml"
+)
+
+SYNTHETIC_CONFIG_BANNER = (
+    "SYNTHETIC / NON-PRODUCTION CONFIGURATION. No approved production model "
+    "configuration exists - Q11-Q16 remain open Product Owner decisions. The "
+    "scores below demonstrate **engine behaviour** only. They do **not** "
+    "evaluate this hitter under an approved production model, and its category "
+    "maxima, buckets, and cutoffs are deliberately wrong for baseball."
+)
+
+SCORE_QUALIFIER = "synthetic demonstration - not a production model result"
+
+# The six hub destinations: (state key, hub label, screen heading).
 DESTINATIONS: tuple[tuple[str, str, str], ...] = (
     ("overview", "OVERVIEW", "Overview"),
     ("metrics", "HITTER METRICS", "Hitter Metrics"),
     ("matchup", "MATCHUP CONTEXT", "Matchup Context"),
     ("audit", "DATA AUDIT", "Data Quality & Audit"),
     ("review", "MANUAL REVIEW", "Manual Review"),
+    ("evaluate", "ENGINE EVALUATION", "Deterministic Engine Evaluation"),
 )
 
 st.set_page_config(page_title="GreenMachine manual review (prototype)", layout="wide")
@@ -72,8 +119,14 @@ st.markdown(BASE_THEME_CSS, unsafe_allow_html=True)
 
 
 @st.cache_resource(show_spinner="Verifying the archived run (read-only replay)...")
-def _load_verified(run_name: str, run_directory: str) -> DashboardData:
-    return load_dashboard(RunHandle(name=run_name, directory=Path(run_directory)))
+def _load_verified(run_name: str, run_directory: str) -> VerifiedRun:
+    """The one replay-verification boundary: one replay per run per session.
+
+    Returns the view models **and** both frozen snapshots, so the Engine
+    Evaluation screen can score without a second verification pass that could
+    drift from this one.
+    """
+    return load_verified_run(RunHandle(name=run_name, directory=Path(run_directory)))
 
 
 def _go(screen: str) -> None:
@@ -418,6 +471,307 @@ def _render_manual_review(data: DashboardData) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# GM-041.5: the deterministic engine evaluation screen
+# --------------------------------------------------------------------------
+
+
+def _plain_decimal(value: object) -> str:
+    """Exact Decimal text. Never float() — ADR-0002 forbids the coercion."""
+    return format(value, "f") if hasattr(value, "as_tuple") else str(value)
+
+
+def _render_synthetic_banner() -> None:
+    st.warning(f"**{SYNTHETIC_CONFIG_BANNER}**")
+
+
+def _render_configuration_identity(versioned: VersionedConfiguration) -> None:
+    """Which configuration produced what follows, and its verifiable identity."""
+    st.caption("Configuration in force  ·  **SYNTHETIC / NON-PRODUCTION**")
+    left, right = st.columns(2)
+    with left:
+        st.markdown(f"- version identifier: `{versioned.version_identifier}`")
+        st.markdown(f"- specification version: `{versioned.configuration.specification_version}`")
+    with right:
+        st.markdown(f"- semantic config_hash: `{versioned.config_hash.value[:16]}...`")
+        digest = versioned.source_digest or "not recorded"
+        st.markdown(f"- source digest: `{digest[:16]}...`")
+    with st.expander("Full configuration identity"):
+        st.markdown(f"- semantic config_hash: `{versioned.config_hash.value}`")
+        st.markdown(f"- source digest: `{versioned.source_digest or 'not recorded'}`")
+        st.caption(
+            "The semantic hash covers behaviour-affecting fields only, so "
+            "reformatting the file cannot change it. The source digest covers "
+            "the exact bytes read."
+        )
+
+
+def _render_component_breakdown(result: EvaluatedGradeResult) -> None:
+    """Every category and every scored component, in the engine's own order."""
+    st.subheader("3. Component Breakdown")
+    st.caption(
+        "Category maxima, buckets, and points below come from the synthetic "
+        "configuration. They are not production allocations."
+    )
+    for category in result.category_scores:
+        st.markdown(
+            f"**{category.category.value}** — category points "
+            f"`{_plain_decimal(category.points_awarded)}`"
+        )
+        for score in category.component_scores:
+            measurement = (
+                f" (measurement `{score.measurement_id.value}`)"
+                if score.measurement_id is not None
+                else ""
+            )
+            bucket = ""
+            if score.bucket_hit is not None:
+                upper = (
+                    "inf"
+                    if score.bucket_hit.upper_bound is None
+                    else _plain_decimal(score.bucket_hit.upper_bound)
+                )
+                terminal = ", terminal" if score.bucket_hit.is_terminal else ""
+                bucket = (
+                    f" — bucket [{_plain_decimal(score.bucket_hit.lower_bound)}, {upper}){terminal}"
+                )
+            st.markdown(
+                f"    - `{score.component_id.value}`{measurement}: "
+                f"`{_plain_decimal(score.points_awarded)}` points{bucket}"
+            )
+
+
+def _render_missing_components(result: GradeResult) -> None:
+    """Why a component recorded zero, with the reason carried on the record."""
+    if not result.missing_observations:
+        return
+    st.markdown("**Components with no observed value**")
+    st.caption(
+        "Each records an explicit zero under its configured record_missing "
+        "policy, with the reason carried on the record. Nothing is imputed."
+    )
+    for observation in result.missing_observations:
+        measurement = (
+            f" (measurement `{observation.measurement_id.value}`)"
+            if observation.measurement_id is not None
+            else ""
+        )
+        st.markdown(
+            f"- `{observation.component_id.value}`{measurement}: "
+            f"missing reason `{observation.missing_reason.value}`"
+        )
+
+
+def _render_audit_trail(result: GradeResult) -> None:
+    """The complete ordered derivation. Nothing truncated, nothing omitted."""
+    entries = result.audit_derivation
+    sequences = [entry.sequence for entry in entries]
+    contiguous = sequences == list(range(1, len(entries) + 1))
+    ordering = f"contiguous 1..{len(entries)}" if contiguous else "NON-CONTIGUOUS"
+    st.subheader("4. Audit Trail")
+    st.caption(
+        f"{len(entries)} ordered entries, sequence {ordering}. Every awarded "
+        f"and withheld point explains itself."
+    )
+    if not contiguous:
+        st.error(
+            f"{ERROR_COLOR.icon} The audit derivation is not contiguously numbered: {sequences}"
+        )
+    with st.expander(f"Complete derivation ({len(entries)} entries)", expanded=False):
+        for entry in entries:
+            scope_bits = []
+            if entry.component_id is not None:
+                scope_bits.append(f"component `{entry.component_id.value}`")
+            if entry.category is not None:
+                scope_bits.append(f"category `{entry.category.value}`")
+            scope = f" — {', '.join(scope_bits)}" if scope_bits else ""
+            st.markdown(f"**{entry.sequence}. `{entry.stage}`**{scope}")
+            st.markdown(f"    - rule reference: `{entry.rule_reference}`")
+            st.markdown(f"    - input: {entry.input_summary}")
+            st.markdown(f"    - output: {entry.output_summary}")
+            st.markdown(f"    - why: {entry.explanation}")
+
+
+def _render_warnings(result: GradeResult) -> None:
+    st.subheader("5. Warnings")
+    st.caption(
+        "Advisory findings only. A warning never silently alters a score, a "
+        "category total, or the tier."
+    )
+    findings = result.validation_findings
+    if not findings:
+        st.markdown("No validation findings for this profile.")
+        return
+    for finding in findings:
+        component = f"`{finding.component_id.value}`: " if finding.component_id is not None else ""
+        st.markdown(f"- [`{finding.input_id.value}`] {component}{finding.message}")
+
+
+def _render_fallbacks(result: GradeResult) -> None:
+    """Fallback provenance, read from the observations the RESULT carries."""
+    st.subheader("6. Fallbacks")
+    entries = [
+        observation
+        for observation in result.present_observations
+        if observation.fallback_used is not None
+    ]
+    if not entries:
+        st.markdown("No fallback acquisition was used for this profile.")
+        return
+    st.caption(
+        "The ingestion layer selected a lower-priority acquisition method "
+        "because the higher-priority ones were ineligible at this as_of. "
+        "Eligibility outranks priority (MODEL_SPEC §11.2)."
+    )
+    for observation in entries:
+        fallback = observation.fallback_used
+        assert fallback is not None  # filtered above; narrows for the type checker
+        st.markdown(
+            f"- `{observation.component_id.value}` resolved through "
+            f"`{observation.acquisition_method.value}`"
+        )
+        for record in fallback.higher_priority_ineligible:
+            st.markdown(f"    - `{record.method.value}` ineligible: {record.reason}")
+
+
+def _render_evaluated(result: EvaluatedGradeResult) -> None:
+    """The six approved engine outputs, and nothing else."""
+    st.subheader("1. Total Score  ·  2. Tier")
+    score_column, tier_column = st.columns(2)
+    with score_column:
+        st.metric(
+            "Total Score",
+            f"{_plain_decimal(result.total_score)} of 12",
+            help=SCORE_QUALIFIER,
+        )
+    with tier_column:
+        st.metric("Tier", result.grade.value, help=SCORE_QUALIFIER)
+    st.caption(f"**{SCORE_QUALIFIER}.**")
+    _render_component_breakdown(result)
+    _render_missing_components(result)
+    _render_audit_trail(result)
+    _render_warnings(result)
+    _render_fallbacks(result)
+
+
+def _render_not_evaluable(result: GradeResult) -> None:
+    """A distinct terminal state. Never a zero, never a D tier."""
+    st.error(
+        f"{ERROR_COLOR.icon} **NOT EVALUABLE** — required data remained "
+        f"unavailable after every approved fallback."
+    )
+    st.caption(
+        "This is a structurally different result from an evaluated one: it "
+        "carries no total score and no tier, and must never be read as zero "
+        "points or as tier D."
+    )
+    unavailable = getattr(result, "unavailable_required_inputs", ())
+    st.subheader("Unavailable required inputs")
+    for entry in unavailable:
+        measurement = (
+            f" (measurement `{entry.measurement_id.value}`)"
+            if entry.measurement_id is not None
+            else ""
+        )
+        st.markdown(
+            f"- `{entry.component_id.value}`{measurement}: "
+            f"missing reason `{entry.missing_reason.value}`"
+        )
+        for ineligibility in entry.attempted_methods:
+            st.markdown(f"    - attempted `{ineligibility.method.value}`: {ineligibility.reason}")
+    _render_audit_trail(result)
+    _render_warnings(result)
+    _render_fallbacks(result)
+
+
+def _render_evaluation_unavailable(failure: GreenMachineError) -> None:
+    """A configuration or scoring failure — never a run-verification failure."""
+    st.error(
+        f"{ERROR_COLOR.icon} **Evaluation unavailable**\n\n"
+        f"- error category: `{failure.error_type}`\n"
+        f"- {failure.message}"
+    )
+    st.caption(
+        "The archived run itself verified successfully. Only the deterministic "
+        "evaluation could not be produced, so no partial result is shown. Every "
+        "other screen remains available."
+    )
+
+
+def _render_evaluation(run: VerifiedRun) -> None:
+    """Compose verified snapshot + non-production configuration into a result.
+
+    This is the only place the three layers meet. ``reporting`` supplied the
+    replay-verified snapshots, ``config`` supplies the disclaimed configuration,
+    and the pure engine turns those two immutable values into a ``GradeResult``.
+    The configuration is loaded lazily here, so a missing or invalid file cannot
+    affect any other screen.
+    """
+    _render_synthetic_banner()
+
+    header = run.dashboard.header
+    st.markdown(
+        f"**Run** `{run.dashboard.run_name}`  ·  **Hitter** {header.batter_name} "
+        f"(`{header.batter_id}`)  ·  **Expected pitcher** {header.pitcher_name} "
+        f"(`{header.pitcher_id}`)  ·  **Game** `{header.game_id}`"
+    )
+
+    try:
+        if not SYNTHETIC_CONFIG_PATH.is_file():
+            raise ConfigParseError(
+                "the non-production configuration file is not present in this "
+                "deployment, so no evaluation can be produced",
+                ErrorContext(subject=SYNTHETIC_CONFIG_PATH.name),
+            )
+        versioned = load_versioned_config(SYNTHETIC_CONFIG_PATH)
+    except ConfigurationError as failure:
+        _render_evaluation_unavailable(failure)
+        return
+
+    _render_configuration_identity(versioned)
+    st.divider()
+
+    labels = {
+        WindowProfile.RECENT_7D: "RECENT_7D — Recent, last 7 days",
+        WindowProfile.LONG_TERM_2Y: "LONG_TERM_2Y — Long-term, rolling 2 years",
+    }
+    profile = st.radio(
+        "Window profile",
+        options=(WindowProfile.RECENT_7D, WindowProfile.LONG_TERM_2Y),
+        format_func=lambda value: labels[value],
+        key="evaluation_profile",
+        horizontal=True,
+    )
+    snapshot: InputSnapshot = (
+        run.recent_snapshot if profile is WindowProfile.RECENT_7D else run.long_term_snapshot
+    )
+    st.caption(
+        f"Scoring snapshot `{snapshot.snapshot_id.value}` "
+        f"(profile `{snapshot.window_profile.value}`)."
+    )
+
+    try:
+        result = score_snapshot(snapshot, versioned.configuration)
+    except ScoringError as failure:
+        _render_evaluation_unavailable(failure)
+        return
+
+    st.divider()
+    if isinstance(result, EvaluatedGradeResult):
+        _render_evaluated(result)
+    else:
+        _render_not_evaluable(result)
+
+    st.divider()
+    _render_synthetic_banner()
+    st.caption(
+        "GreenMachine separates evaluation from decision-making. This screen "
+        "produces no automated recommendation and no decision output. Every "
+        "decision is yours. The Manual Review worksheet remains entirely "
+        "separate and is never written to from here."
+    )
+
+
 def main() -> None:
     handles = discover_runs(EVIDENCE_ROOT)
     if not handles:
@@ -442,11 +796,13 @@ def main() -> None:
     _render_return_control(headings.get(screen, "Overview"))
 
     try:
-        data = _load_verified(handle.name, str(handle.directory))
+        run = _load_verified(handle.name, str(handle.directory))
     except GreenMachineError as failure:
         _render_focused_error(handle.name, failure)
         st.stop()
         return
+
+    data = run.dashboard
 
     if screen == "overview":
         _render_overview(data)
@@ -458,6 +814,8 @@ def main() -> None:
         _render_audit(data)
     elif screen == "review":
         _render_manual_review(data)
+    elif screen == "evaluate":
+        _render_evaluation(run)
     else:  # an unknown state falls back to the hub rather than a blank page
         _go("hub")
         _render_hub()

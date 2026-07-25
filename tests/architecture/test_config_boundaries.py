@@ -275,15 +275,42 @@ def test_no_component_threshold_table_lives_in_source() -> None:
                     )
 
 
+# GM-041.5 relocated the disclaimed synthetic configuration out of tests/ so the
+# deployed app never reads an executable configuration from the test tree. It
+# lives in exactly one place, and that place announces non-production in its
+# name. Everything ELSE under config/ would be a production configuration, which
+# still cannot exist while Q11-Q16 are open.
+NONPRODUCTION_CONFIG_DIR = REPO_ROOT / "config" / "nonproduction"
+
+
 def test_no_production_yaml_configuration_is_committed() -> None:
-    """No finalized config/model version exists; GM-003 delivers the schema only."""
+    """No approved production model configuration exists (Q11-Q16 open).
+
+    ``config/nonproduction/`` is the one permitted home for a disclaimed,
+    non-production configuration. A YAML anywhere else under ``config/`` would
+    be a production model configuration, which no ticket has approved.
+    """
     config_dir = REPO_ROOT / "config"
     if config_dir.exists():
-        committed = [p for p in config_dir.rglob("*.yaml")] + [p for p in config_dir.rglob("*.yml")]
+        committed = [
+            path
+            for path in [*config_dir.rglob("*.yaml"), *config_dir.rglob("*.yml")]
+            if NONPRODUCTION_CONFIG_DIR not in path.parents
+        ]
         assert not committed, f"production configuration committed: {committed}"
 
     assert not list(SRC_ROOT.rglob("*.yaml"))
     assert not list(SRC_ROOT.rglob("*.yml"))
+
+
+def test_every_nonproduction_configuration_is_loudly_disclaimed() -> None:
+    """Anything executable outside tests/ must say what it is, in the file."""
+    configurations = sorted(NONPRODUCTION_CONFIG_DIR.rglob("*.yaml"))
+    assert configurations, "the non-production configuration directory is populated"
+    for path in configurations:
+        text = path.read_text(encoding="utf-8").upper()
+        assert "NOT A MODEL CONFIGURATION" in text, path.name
+        assert "SYNTHETIC" in text, path.name
 
 
 # Tooling YAML, not model configuration. Enumerated rather than pattern-matched
@@ -291,8 +318,13 @@ def test_no_production_yaml_configuration_is_committed() -> None:
 TOOLING_YAML = frozenset({".pre-commit-config.yaml"})
 
 
-def test_model_configuration_yaml_lives_only_under_test_fixtures() -> None:
-    """The only model configuration in the tree is the synthetic fixture."""
+def test_model_configuration_yaml_lives_only_in_approved_locations() -> None:
+    """Two permitted homes, both non-production, and nowhere else.
+
+    ``tests/fixtures/`` holds fixtures the suite builds on; ``config/nonproduction/``
+    holds the one disclaimed configuration the deployed app may execute. A model
+    configuration anywhere else would be an unapproved production configuration.
+    """
     candidates = [
         path
         for path in [*REPO_ROOT.rglob("*.yaml"), *REPO_ROOT.rglob("*.yml")]
@@ -300,10 +332,23 @@ def test_model_configuration_yaml_lives_only_under_test_fixtures() -> None:
         and ".github" not in path.parts
         and path.name not in TOOLING_YAML
     ]
-    outside = [path for path in candidates if "fixtures" not in path.parts]
+    outside = [
+        path
+        for path in candidates
+        if "fixtures" not in path.parts and NONPRODUCTION_CONFIG_DIR not in path.parents
+    ]
 
-    assert candidates, "expected the synthetic fixture to be found"
-    assert not outside, f"model configuration YAML outside tests/fixtures: {outside}"
+    assert candidates, "expected the synthetic configurations to be found"
+    assert not outside, f"model configuration YAML in an unapproved location: {outside}"
+
+
+def test_the_relocated_configuration_is_outside_the_test_tree() -> None:
+    """Anti-vacuity for the allowance above: the app's configuration really did
+    leave tests/, which is the whole point of the GM-041.5 relocation."""
+    canonical = NONPRODUCTION_CONFIG_DIR / "gm041_engine_synthetic.yaml"
+
+    assert canonical.is_file()
+    assert "tests" not in canonical.relative_to(REPO_ROOT).parts
 
 
 def test_the_fixtures_are_labelled_synthetic() -> None:

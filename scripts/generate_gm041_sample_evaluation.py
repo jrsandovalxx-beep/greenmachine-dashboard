@@ -43,9 +43,7 @@ from greenmachine.evaluation import deserialize_snapshot  # noqa: E402
 from greenmachine.scoring import score_snapshot  # noqa: E402
 
 DEFAULT_RUN_DIR = _REPO_ROOT / "evidence" / "gm020_vertical_slice" / "run_gm040_ohtani"
-DEFAULT_CONFIG = (
-    _REPO_ROOT / "tests" / "fixtures" / "config" / "valid" / "gm041_engine_synthetic.yaml"
-)
+DEFAULT_CONFIG = _REPO_ROOT / "config" / "nonproduction" / "gm041_engine_synthetic.yaml"
 DEFAULT_OUTPUT = _REPO_ROOT / "docs" / "samples"
 
 SNAPSHOT_FILES = ("input_snapshot_recent_7d.json", "input_snapshot_long_term_2y.json")
