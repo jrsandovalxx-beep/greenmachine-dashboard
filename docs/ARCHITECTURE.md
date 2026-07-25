@@ -26,7 +26,7 @@ GreenMachine is **a pure function wrapped in adapters**.
   model config ──▶┌───────────────────▼────────────────────────┐
   (versioned,     │  GRADING CORE  (pure, deterministic)       │
    hashed)        │  buckets → metrics → categories → total    │
-                  │  → grade → signal → validation findings    │
+                  │  → grade → validation findings             │
                   │  ⇒ GradeResult                             │
                   └───────────────────┬────────────────────────┘
                                       │
@@ -65,7 +65,7 @@ Never conflated. All four are recorded on every stored evaluation.
 |---|---|---|
 | **Product specification** | `v6.2` | Baseball/product specification changes |
 | **Code version** | `0.2.0` (SemVer) | Software changes |
-| **Model configuration version** | `v0.1.0` (SemVer) | Thresholds, allocations, buckets, cutoffs, signal config change |
+| **Model configuration version** | `v0.1.0` (SemVer) | Thresholds, allocations, buckets, or cutoffs change |
 | **Evaluation schema version** | `1` | Persisted snapshot/evaluation record format changes |
 
 `GreenMachine v6.2` is a product-specification version. It is **not** a code SemVer.
@@ -84,16 +84,18 @@ Recorded here because they shape the architecture. Authoritative text is in `MOD
 - **Q2 — Evaluation unit.** One batter, one game, versus the expected starting pitcher, one
   frozen snapshot, **one window profile**. *Architectural impact:* `window_profile` is part of
   evaluation identity; a pitcher change produces a new snapshot and a superseding evaluation.
-- **Q3 — Output.** Score 0–12; grades S/A/B/C/D; status `EVALUATED` | `NOT_EVALUABLE`; signal
-  engine with strict priority. *Architectural impact:* `GradeResult` must model an evaluated
-  and a not-evaluable shape without inventing a score for the latter.
+- **Q3 — Output.** Score 0–12; grades S/A/B/C/D; status `EVALUATED` | `NOT_EVALUABLE`.
+  *Architectural impact:* `GradeResult` must model an evaluated and a not-evaluable shape
+  without inventing a score for the latter. (The signal engine this question also described was
+  removed by the GM-041 ruling; see MODEL_SPEC §16.)
 - **Q4 — Validation Layer.** Advisory only. *Architectural impact:* validation lives **beside**
   scoring inside the pure core (it is deterministic and derived from the same frozen input),
-  contributes zero points, and cannot influence grade or signal.
+  contributes zero points, and cannot influence the score or the grade.
 
 Specification v6.3 additionally closed **Q25** (allocations are profile-invariant), **Q26**
-(fractional points allowed; strong category stays at 75% with no rounding), **Q27** (`AVOID`
-priority is intentional and carries an override reason), **Q28** (15% pitch-usage default and
+(fractional points allowed — the strong-category half of that closure was removed with the
+signal engine in GM-041), **Q27** (superseded entirely by the GM-041 ruling), **Q28** (15%
+pitch-usage default and
 its denominator), and **Q30** (canonical provider `game_id`, official `slate_date`).
 
 *Architectural impact of v6.3:* one `InputSnapshot` carries exactly one profile (§5); a single
@@ -116,7 +118,7 @@ Dependencies point **inward only**:
 ### 4.1 `domain` — vocabulary
 Frozen value objects and enums: `Batter`, `Pitcher`, `Venue`, `GameContext`, `WindowProfile`,
 `MetricId`, `SampleType`, `MetricObservation`, `MissingReason`, `BucketHit`, `MetricScore`,
-`CategoryScore`, `Grade`, `Signal`, `EvaluationStatus`, `ValidationFinding`, `GradeResult`,
+`CategoryScore`, `Grade`, `EvaluationStatus`, `ValidationFinding`, `GradeResult`,
 `EvaluationEnvelope`, `InputSnapshot`, `OutcomeRecord`.
 No I/O, no config knowledge, no third-party types beyond the modelling toolchain.
 
@@ -145,12 +147,12 @@ must be read with a string dtype: pandas defaults to `float64`, and a value that
 through a binary float has already lost the Decimal guarantee.
 
 ### 4.4 `scoring` — the grading core (pure)
-Bucket resolution → metric scoring → category aggregation → total → grade → signal.
+Bucket resolution → metric scoring → category aggregation → total → grade.
 Enforces invariants: metric ≤ `max_points`, category ≤ category max, total ≤ 12.
 
 ### 4.5 `validation` — advisory layer (pure)
 Consumes the same frozen input, produces structured findings. Zero points. Structurally unable
-to alter score, grade, or signal — enforced by the fact that it runs after grading and its
+to alter the score or the grade — enforced by the fact that it runs after grading and its
 output is attached, not fed back.
 
 ### 4.6 `evaluation` — orchestration
@@ -219,7 +221,7 @@ The single most important structural separation in the system.
 |---|---|---|
 | Purity | **Pure** — a function of `(frozen EvaluationInput, config)` | Impure context |
 | Produced by | `scoring` + `validation` | `evaluation` orchestration |
-| Contains | status, window profile, metric observations (`component_id` + `measurement_id`), bucket results, component scores, category scores, total (if evaluated), grade (if evaluated), signal and override reason (if evaluated), validation findings, complete audit derivation. All scores are `Decimal`. | `evaluation_id`, `snapshot_id`, **`source_capture_id`**, `evaluated_at`, code version, model version, **product-specification version**, schema version, `config_hash`, `input_hash`, subject identity, provenance, `supersedes` |
+| Contains | status, window profile, metric observations (`component_id` + `measurement_id`), bucket results, component scores, category scores, total (if evaluated), grade (if evaluated), validation findings, complete audit derivation. All scores are `Decimal`. | `evaluation_id`, `snapshot_id`, **`source_capture_id`**, `evaluated_at`, code version, model version, **product-specification version**, schema version, `config_hash`, `input_hash`, subject identity, provenance, `supersedes` |
 | Time | **Never** reads or generates time | `evaluated_at` supplied via injected clock |
 
 **Determinism guarantee:** given identical inputs, configuration, *and* envelope metadata, the
@@ -351,7 +353,6 @@ greenmachine/
 │   │   └── v0.1.0/
 │   │       ├── model.yaml              # spec version, category maxima, grade cutoffs
 │   │       ├── allocations.yaml        # profile-INVARIANT max_points per component
-│   │       ├── signals.yaml            # rules, priority, strong threshold, override reasons
 │   │       ├── profiles/
 │   │       │   ├── recent_7d.yaml      # profile-specific buckets + min samples ONLY
 │   │       │   └── long_term_2y.yaml
@@ -473,12 +474,11 @@ Store UTC; define slate date once, in config; handle doubleheader game identity 
 Overlapping buckets, gaps, or allocations that do not sum will produce a plausible wrong grade.
 Mitigation: strict + semantic validation at load; every committed config version validated in CI.
 
-### R10 — Signal-rule interaction surprises · *confirmed intentional (Q26, Q27 closed)*
-`AVOID` precedence can produce Grade S with signal `AVOID`. This is deliberate: the grade
-reports the total score, the signal applies the prioritized rules. **Mitigation:** the override
-reason (e.g. `power_profile_veto`) is a required field on the result and must be shown in the
-interface, so the pairing never looks like a bug to a user. The 75% concern is dissolved by
-fractional points: a 3-point category is strong at 2.25, which is now reachable.
+### R10 — Signal-rule interaction surprises · *retired (GM-041)*
+This risk described the v6.3 signal engine, where `AVOID` precedence could pair Grade S with
+signal `AVOID`. The Product Owner removed every betting classification from scope in GM-041, so
+the interaction no longer exists and the risk is closed rather than mitigated. GreenMachine
+separates evaluation from decision-making; the downstream decision belongs to the user.
 
 ### R11 — Backtest depth vs. metric availability (LOW-MEDIUM · Q20, Q22)
 Bat tracking and attack-angle coverage cap full-fidelity backtest depth. A documented degraded

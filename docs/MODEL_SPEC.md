@@ -93,7 +93,7 @@ calculation, and dynamic normalization or reweighting because data is missing.
 scores, and totals may be non-integer.
 
 **No rounding occurs before any of:** bucket qualification, category aggregation, total
-aggregation, grade assignment, strong-category comparison, signal assignment.
+aggregation, grade assignment.
 
 Presentation rounding is a separate, downstream concern and never affects model behavior.
 
@@ -114,7 +114,7 @@ Binding on every layer that touches a value entering scoring.
   grading arithmetic
 - Derived ratios and percentages are computed under that declared context
 - Derived values are **not quantized** before scoring
-- **No rounding** before bucket, grade, strong-category, or signal comparisons
+- **No rounding** before bucket or grade comparisons
 - Presentation rounding occurs **outside** the grading core
 - Canonical serialization represents Decimal values as deterministic **base-10 strings**, never
   binary floats
@@ -222,7 +222,7 @@ Window Agreement: Strong
 ```
 
 Window agreement is **research context only** — not a scored category, not a point adjustment,
-not a signal modifier, not a veto. Its exact definition is open (Q29).
+not a veto. Its exact definition is open (Q29).
 
 ---
 
@@ -555,62 +555,43 @@ before any presentation rounding.**
 | `EVALUATED` | The complete approved scoring contract was resolved |
 | `NOT_EVALUABLE` | Required data remained unavailable after all approved component-specific fallbacks |
 
-`NOT_EVALUABLE` is **not** a D grade, receives **no** manufactured score, receives **no**
-signal, must explain which required inputs prevented evaluation, and must preserve the snapshot
-and the failure audit.
+`NOT_EVALUABLE` is **not** a D grade, receives **no** manufactured score, must explain which
+required inputs prevented evaluation, and must preserve the snapshot and the failure audit.
 
-A complete but poor candidate receives a numeric score, Grade D, and signal `AVOID`.
+A complete but poor candidate receives a numeric score and Grade D.
 
 ---
 
-## 16. Signal engine
+## 16. Evaluation output (betting classifications removed)
 
-Signals: `STRONG_BET`, `LEAN`, `PASS`, `AVOID`.
+**GreenMachine intentionally separates evaluation from decision-making.** The platform's
+responsibility ends after producing a transparent, deterministic, auditable evaluation. Any
+wagering, fantasy, DFS, or other downstream decision belongs entirely to the user and is outside
+the scope of GreenMachine.
 
-**Rules are evaluated in strict priority order. The first match wins. This priority is
-intentional.**
+The grading engine's output is exactly and only:
 
-```
-1. AVOID
-2. STRONG_BET
-3. LEAN
-4. PASS
-```
+1. **Total Score**
+2. **Tier** (the Grade of §14)
+3. **Component Breakdown** (per-component and per-category scores)
+4. **Audit Trail** (the ordered derivation)
+5. **Warnings** (for example insufficient-sample findings)
+6. **Fallbacks** (provenance of any fallback actually used)
 
-**Strong category:** `category_score >= category_max_points × 0.75`, compared in Decimal with
-no rounding. A 3-point category is strong at **2.25 or above**; a 2-point category is strong at
-**1.50 or above**.
-
-| Signal | Rule |
-|---|---|
-| `AVOID` | Grade D **OR** Power Profile score ≤ 1 |
-| `STRONG_BET` | Grade S **OR** (Grade A **AND** ≥ 3 strong categories) |
-| `LEAN` | Grade A **OR** (Grade B **AND** total ≥ 7 **AND** ≥ 2 strong categories) |
-| `PASS` | Everything else that was successfully evaluated |
-
-### 16.1 Signal override
-
-Because `AVOID` is evaluated first, **a high total grade can still receive `AVOID`**:
-
-```
-Grade:  S
-Signal: AVOID
-Reason: power_profile_veto
-```
-
-This is intended. **The grade reports the total score. The signal applies the prioritized
-decision rules.** The interface and the audit trail must clearly show the signal override
-reason.
-
-Signal thresholds, labels, and override reason codes belong in configuration. The signal engine
-is deterministic and fully audited: the evaluation records which rule fired and why.
+**Historical note.** Specification v6.3 defined a signal engine here that resolved
+`AVOID` → `STRONG_BET` → `LEAN` → `PASS` in strict priority order, with an override reason
+(§16.1) and a "strong category" fraction of 0.75 that existed only to feed those rules. GM-041
+removed all of it — the `Signal` enum, the `signal` and `signal_reason` result fields, the
+configuration rule family, and the strong-category fraction — by Product Owner ruling. No
+betting classification, recommendation engine, or equivalent may be reintroduced. Q27, which
+closed on the priority ordering, is superseded and recorded as such in `OPEN_QUESTIONS.md`.
 
 ---
 
 ## 17. Validation Layer
 
 **Advisory only.** It does not award points, remove points, cap a grade, veto an evaluable
-result, change the signal, or reweight a category. It sits beside the scored result.
+result, or reweight a category. It sits beside the scored result.
 
 Validation context includes: wOBA for the corresponding profile where available, Relief
 Vulnerability, Bullpen Notes, **sample-size warnings (including every `INSUFFICIENT` sample
@@ -671,7 +652,6 @@ warning.
 14. Every category references only defined components, and every defined component is referenced
 15. Profile-specific bucket sets exist for every component declaring that profile
 16. Measurement-specific bucket sets exist for every declared measurement of a component
-17. Signal rules reference defined grades, categories, thresholds, and override reason codes
 
 ---
 
@@ -700,7 +680,6 @@ Every `EVALUATED` result must answer, from stored data alone:
 - Which bucket configuration was used, which bucket the value landed in, and the points awarded
 - Each category subtotal and the total, in exact Decimal terms
 - Which grade cutoff applied
-- Which signal rule fired, in priority order, and any override reason
 - `provider_id`, `acquisition_method`, `fallback_used`, and **why each higher-priority
   acquisition method was ineligible**
 - The model configuration version and config hash in force

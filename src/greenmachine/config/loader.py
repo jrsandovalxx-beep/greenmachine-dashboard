@@ -56,24 +56,18 @@ class _UnhashableKey(yaml.MarkedYAMLError):
 # there carries the matching discriminator value.
 #
 # A union is identified by its full schema **position**, not by a field name.
-# The schema has exactly two discriminated unions, keyed here by the sequence of
+# The schema has exactly one discriminated union, keyed here by the sequence of
 # field names (indices dropped) that leads to the union list:
 #
 # * ``ComponentProfileConfig.scoring`` — the ``AnyScoring`` union.
-# * ``SignalClause.all_of`` — the ``AnySignalCondition`` union.
 #
 # ``QualificationPredicate.all_of`` and ``.any_of`` are lists of plain
-# ``PredicateComparison`` objects, *not* unions. Their field names collide with
-# the signal union's, which is exactly why matching on position rather than name
-# is required: a real ``grade_in`` key inside a binary predicate's ``all_of``
-# must survive.
-_SIGNAL_CONDITION_TAGS = frozenset(
-    {"grade_in", "total_score", "category_score", "strong_category_count", "always"}
-)
+# ``PredicateComparison`` objects, *not* unions. Position-based matching is kept
+# rather than name-based so that a field name reused elsewhere in the schema can
+# never be mistaken for a union position.
 _UNION_POSITIONS: dict[tuple[str, ...], tuple[str, frozenset[str]]] = {
     # field-name spine (no indices) -> (discriminator key, permitted tag values)
     ("components", "profiles", "scoring"): ("method", frozenset({"bucketed", "binary"})),
-    ("allocations", "signal_rules", "any_of", "all_of"): ("type", _SIGNAL_CONDITION_TAGS),
 }
 
 
@@ -181,9 +175,9 @@ def _normalize_key_path(location: tuple[object, ...], document: dict[str, Any]) 
 
     A union is recognised by the full sequence of field names leading to it (its
     ``field_spine`` — the key segments with the list indices dropped), never by
-    the immediate field name alone. ``all_of`` names a discriminated union under
-    a signal rule but a plain list under a qualification predicate, so a real
-    ``grade_in`` key inside a binary predicate's ``all_of`` is preserved.
+    the immediate field name alone, so a field name reused at a non-union
+    position — such as ``all_of`` under a qualification predicate — is preserved
+    verbatim.
 
     When the document cannot be navigated (because it is itself invalid), a
     candidate segment is *kept* rather than guessed at, so an accurate-but-noisier

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from config_fixtures import (
     FUZZY_DISABLED,
-    STRONG_FRACTION,
+    TOTAL_MAX,
     VALID_PATH,
     drop_line,
     invalid_path,
@@ -85,7 +85,7 @@ def test_the_yaml_dialect_is_narrow(name: str, expected: str) -> None:
 
 def test_a_duplicate_key_fails_before_schema_validation() -> None:
     """Last-one-wins would silently discard a threshold somebody set."""
-    text = mutate(STRONG_FRACTION, f'{STRONG_FRACTION}\n  strong_category_fraction: "0.99"')
+    text = mutate(TOTAL_MAX, f'{TOTAL_MAX}\n  total_max_points: "9.99"')
 
     with pytest.raises(ConfigParseError, match=r"duplicate key"):
         load_config_text(text)
@@ -104,9 +104,9 @@ def test_a_duplicate_key_deep_in_the_tree_is_caught() -> None:
 def test_an_alias_inside_a_real_configuration_is_refused() -> None:
     """Anchors and aliases are how YAML creates shared state; both are refused."""
     text = mutate(
-        '  strong_category_fraction: "0.62"',
-        '  strong_category_fraction: &frac "0.62"\n  total_max_points: *frac',
-    ).replace('  total_max_points: "12"\n', "", 1)
+        '      max_points: "2.7"',
+        '      max_points: &pts "2.7"\n      alias_echo: *pts',
+    )
 
     with pytest.raises(ConfigParseError, match=r"aliases are not allowed"):
         load_config_text(text)
@@ -144,15 +144,15 @@ def test_a_parse_failure_records_the_file() -> None:
 
 
 def test_a_schema_failure_records_the_key_path() -> None:
-    text = mutate('  strong_category_fraction: "0.62"', "  strong_category_fraction: 0.62")
+    text = mutate('  total_max_points: "12"', "  total_max_points: 12.0")
 
     with pytest.raises(ConfigSchemaError) as caught:
         load_config_text(text, file_path="synthetic.yaml")
 
     context = caught.value.context
     assert context.file_path == "synthetic.yaml"
-    assert context.key_path == ("allocations", "strong_category_fraction")
-    assert "allocations.strong_category_fraction" in str(caught.value)
+    assert context.key_path == ("allocations", "total_max_points")
+    assert "allocations.total_max_points" in str(caught.value)
 
 
 def test_a_semantic_failure_records_the_key_path() -> None:
@@ -179,7 +179,7 @@ def test_a_component_failure_records_the_metric_and_profile() -> None:
 
 
 def test_the_original_exception_is_preserved_as_cause() -> None:
-    text = mutate('  strong_category_fraction: "0.62"', "  strong_category_fraction: 0.62")
+    text = mutate('  total_max_points: "12"', "  total_max_points: 12.0")
 
     with pytest.raises(ConfigSchemaError) as caught:
         load_config_text(text)
@@ -194,7 +194,7 @@ def test_no_raw_pydantic_or_yaml_exception_escapes() -> None:
     from pydantic import ValidationError
 
     cases = [
-        mutate('  strong_category_fraction: "0.62"', "  strong_category_fraction: 0.62"),
+        mutate('  total_max_points: "12"', "  total_max_points: 12.0"),
         mutate(FUZZY_DISABLED, "  enabled: true"),
         "allocations: { categories: [",
     ]
@@ -215,7 +215,6 @@ def test_no_raw_pydantic_or_yaml_exception_escapes() -> None:
         ("root schema_version", "schema_version: 1\n", ""),
         ("root specification_version", 'specification_version: "v6.3"\n', ""),
         ("root fuzzy policy", "fuzzy_scoring:\n  enabled: false\n", ""),
-        ("allocations strong fraction", '  strong_category_fraction: "0.62"\n', ""),
         ("allocations total", '  total_max_points: "12"\n', ""),
         ("category max_points", '      max_points: "2.7"\n', ""),
         ("component sample_type", "    sample_type: air_balls\n", ""),
@@ -289,16 +288,6 @@ def test_a_missing_key_names_where_it_belongs() -> None:
             "grade cutoff",
             '    - { grade: D, lower: "0",   upper: "3.3", terminal: false }',
             '    - { grade: D, lower: "0", upper: "3.3", terminal: false, surprise_grade: 1 }',
-        ),
-        (
-            "signal rule",
-            "      signal: PASS",
-            "      signal: PASS\n      surprise_rule: 1",
-        ),
-        (
-            "signal condition",
-            "            - { type: always }",
-            "            - { type: always, surprise_condition: 1 }",
         ),
     ],
 )

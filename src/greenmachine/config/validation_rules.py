@@ -8,15 +8,14 @@ anything.
 
 Every failure names the file and the exact key path that caused it.
 
-This module validates structure. It resolves no bucket for a value, assigns no
-grade, and evaluates no signal; where it needs to prove that an interval set
-covers its domain exactly once, it uses the generic GM-005 helpers rather than
-reimplementing the convention.
+This module validates structure. It resolves no bucket for a value and assigns
+no grade; where it needs to prove that an interval set covers its domain
+exactly once, it uses the generic GM-005 helpers rather than reimplementing the
+convention.
 """
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from decimal import Decimal, DecimalException
@@ -28,7 +27,7 @@ from greenmachine.common.numeric import (
     divide,
     resolve_scoring_interval,
 )
-from greenmachine.domain import Category, ComponentId, Grade, MeasurementId, Signal
+from greenmachine.domain import Category, ComponentId, Grade, MeasurementId
 
 from .errors import ConfigSemanticError, context_for, key_path_text
 from .schema import (
@@ -39,7 +38,6 @@ from .schema import (
     Direction,
     GreenMachineConfig,
     ScoringMethod,
-    SignalRule,
 )
 
 __all__ = ["TOTAL_MAX_POINTS", "validate_semantics"]
@@ -49,9 +47,6 @@ __all__ = ["TOTAL_MAX_POINTS", "validate_semantics"]
 # [0, 12]; §19 invariant 5 requires category maximums to sum exactly to it.
 TOTAL_MAX_POINTS = decimal_from("12")
 SCORE_DOMAIN_MIN = decimal_from("0")
-
-# The approved evaluation order (MODEL_SPEC §16, Q27). AVOID is evaluated first.
-SIGNAL_PRIORITY_ORDER = (Signal.AVOID, Signal.STRONG_BET, Signal.LEAN, Signal.PASS)
 
 # The Grade vocabulary in ascending score order (MODEL_SPEC §14). This is the
 # meaning of the grades, not a threshold: whatever numbers a configuration
@@ -63,11 +58,6 @@ ATTACK_ANGLE_MEASUREMENTS = (
     MeasurementId.IDEAL_ATTACK_ANGLE_PCT,
     MeasurementId.ATTACK_ANGLE_THRESHOLD_PROXY,
 )
-
-# A stable, machine-usable identifier: lowercase, starts with a letter, then
-# letters/digits/underscores. An override reason code has to survive being
-# grepped for and compared, so free text is not enough.
-STABLE_CODE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _decimal_step(numerator: str, denominator: str) -> Decimal:
@@ -163,7 +153,6 @@ def validate_semantics(config: GreenMachineConfig, file_path: str | None) -> Non
     _validate_fuzzy_disabled(config, file_path)
     _validate_allocations(config.allocations, config.components, file_path)
     _validate_grade_cutoffs(config.allocations, file_path)
-    _validate_signal_rules(config.allocations, file_path)
     _validate_components(config, file_path)
 
 
@@ -296,14 +285,6 @@ def _validate_allocations(
             (*base, "categories"),
         )
 
-    if allocations.strong_category_fraction <= 0 or allocations.strong_category_fraction > 1:
-        raise _fail(
-            "strong_category_fraction must be greater than 0 and at most 1, got "
-            f"{allocations.strong_category_fraction}",
-            file_path,
-            (*base, "strong_category_fraction"),
-        )
-
 
 # --------------------------------------------------------------------------
 # Grade cutoffs (MODEL_SPEC §14, §19 invariant 13)
@@ -387,161 +368,6 @@ def _validate_grade_cutoffs(allocations: AllocationConfig, file_path: str | None
         base,
         "grade cutoffs",
     )
-
-
-# --------------------------------------------------------------------------
-# Signal rules (MODEL_SPEC §16, §19 invariant 17)
-# --------------------------------------------------------------------------
-
-
-def _validate_signal_rules(allocations: AllocationConfig, file_path: str | None) -> None:
-    base = ("allocations", "signal_rules")
-    rules = allocations.signal_rules
-
-    signals = [rule.signal for rule in rules]
-    if repeated := _duplicates(signals):
-        raise _fail(f"signal declared more than once: {repeated}", file_path, base)
-    if missing := sorted(s.value for s in Signal if s not in set(signals)):
-        raise _fail(f"signal missing a rule: {missing}", file_path, base)
-
-    priorities = [rule.priority for rule in rules]
-    if repeated := _duplicates(priorities):
-        raise _fail(f"priority used more than once: {repeated}", file_path, base)
-    expected = list(range(1, len(rules) + 1))
-    if sorted(priorities) != expected:
-        raise _fail(
-            f"priorities must be contiguous starting at 1; expected {expected}, got "
-            f"{sorted(priorities)}",
-            file_path,
-            base,
-        )
-
-    by_priority = sorted(rules, key=lambda rule: rule.priority)
-    resolved_order = tuple(rule.signal for rule in by_priority)
-    if resolved_order != SIGNAL_PRIORITY_ORDER:
-        raise _fail(
-            "signal priority order must be "
-            f"{[s.value for s in SIGNAL_PRIORITY_ORDER]}, got "
-            f"{[s.value for s in resolved_order]}",
-            file_path,
-            base,
-        )
-
-    category_maxima = {entry.category: entry.max_points for entry in allocations.categories}
-
-    for rule in by_priority:
-        index = rules.index(rule)
-        _validate_signal_rule(rule, index, category_maxima, len(category_maxima), file_path, base)
-
-    _validate_fallback_placement(rules, by_priority, file_path, base)
-
-
-def _validate_signal_rule(
-    rule: SignalRule,
-    index: int,
-    category_maxima: dict[Category, Decimal],
-    category_count: int,
-    file_path: str | None,
-    base: tuple[str, ...],
-) -> None:
-    location = (*base, str(index))
-
-    # fullmatch, not match: with `$` alone, ``re.match`` accepts a trailing
-    # newline (``"code\n"``), which is not a stable identifier. fullmatch requires
-    # the entire string — no leading/trailing whitespace, newline, or tab.
-    if rule.override_reason is not None and not STABLE_CODE.fullmatch(rule.override_reason):
-        raise _fail(
-            "override_reason must be a stable identifier matching "
-            f"{STABLE_CODE.pattern} across the whole value (lowercase, starting with a "
-            f"letter, no surrounding whitespace), got {rule.override_reason!r}",
-            file_path,
-            (*location, "override_reason"),
-        )
-
-    for clause_index, clause in enumerate(rule.any_of):
-        for condition_index, condition in enumerate(clause.all_of):
-            where = (*location, "any_of", str(clause_index), "all_of", str(condition_index))
-
-            if condition.type == "total_score":
-                if not SCORE_DOMAIN_MIN <= condition.value <= TOTAL_MAX_POINTS:
-                    raise _fail(
-                        f"total-score threshold {condition.value} is outside the score domain "
-                        f"[{SCORE_DOMAIN_MIN}, {TOTAL_MAX_POINTS}]",
-                        file_path,
-                        (*where, "value"),
-                    )
-            elif condition.type == "category_score":
-                maximum = category_maxima.get(condition.category)
-                if maximum is None:
-                    raise _fail(
-                        f"condition references undefined category '{condition.category.value}'",
-                        file_path,
-                        (*where, "category"),
-                    )
-                if not SCORE_DOMAIN_MIN <= condition.value <= maximum:
-                    raise _fail(
-                        f"category threshold {condition.value} is outside "
-                        f"'{condition.category.value}' domain [{SCORE_DOMAIN_MIN}, {maximum}]",
-                        file_path,
-                        (*where, "value"),
-                    )
-            elif condition.type == "strong_category_count" and condition.count > category_count:
-                raise _fail(
-                    f"strong-category count {condition.count} exceeds the "
-                    f"{category_count} configured categories",
-                    file_path,
-                    (*where, "count"),
-                )
-
-
-def _always_count(rule: SignalRule) -> int:
-    """How many ``always`` conditions the rule contains, across all clauses."""
-    return sum(
-        1 for clause in rule.any_of for condition in clause.all_of if condition.type == "always"
-    )
-
-
-def _validate_fallback_placement(
-    rules: Sequence[SignalRule],
-    by_priority: Sequence[SignalRule],
-    file_path: str | None,
-    base: tuple[str, ...],
-) -> None:
-    """The final rule is an unconditional fallback, and nothing else uses ``always``.
-
-    ``always`` is the only condition that is true no matter the score, so it may
-    appear exactly once, alone, in exactly the lowest-priority rule. Anywhere
-    else — combined with another condition, in a rule that also has alternative
-    clauses, duplicated, or on AVOID / STRONG_BET / LEAN — it would make a signal
-    fire in cases that are not actually the fallback.
-    """
-    final = by_priority[-1]
-
-    # No rule other than the final one may contain `always` at all.
-    for rule in by_priority[:-1]:
-        if _always_count(rule) > 0:
-            raise _fail(
-                f"only the final fallback rule may use the 'always' condition, but "
-                f"'{rule.signal.value}' (priority {rule.priority}) contains it",
-                file_path,
-                (*base, str(rules.index(rule))),
-            )
-
-    # The final rule must be *exactly* one unconditional clause.
-    location = (*base, str(rules.index(final)))
-    valid_shape = (
-        len(final.any_of) == 1
-        and len(final.any_of[0].all_of) == 1
-        and final.any_of[0].all_of[0].type == "always"
-    )
-    if not valid_shape:
-        raise _fail(
-            f"the final fallback rule ('{final.signal.value}') must be exactly one clause of one "
-            "'always' condition, with no other clauses or conditions, so every evaluated result "
-            "resolves to a signal",
-            file_path,
-            location,
-        )
 
 
 # --------------------------------------------------------------------------

@@ -4,13 +4,32 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-25 (revision 3), on
-`feature/gm041-production-grading-engine`. **GM-041 is RESUMED and in
-progress**, with all WIP committed, the full suite green, and every gate
-clean; it is **blocked on one Product Owner ruling** — the §5 signal-removal
-contract amendment. See §12 for the exact current state and §16 for the
-revision history. The approved product-identity rulings are in §1a/§5 and the
-approved GM-042 Record Book scope in §13.
+Last updated: 2026-07-25 (revision 4), on
+`feature/gm041-production-grading-engine-mainline`. **GM-041 is COMPLETE and
+awaiting review.** The signal-removal amendment is implemented, the sample
+evaluation is generated, all gates are green, and the work sits on a branch
+grafted cleanly onto `origin/main`. See §12 for the delivered state, §11a for
+the repository-history issue and its resolution, §0 for the standing
+one-ticket rule, and §16 for the revision history.
+
+---
+
+## 0. STANDING PROCESS RULES (binding)
+
+**One ticket at a time.** Exactly one ticket is active. While it is open, do
+not perform repository restructuring, duplicate-tree cleanup, deployment
+reorganization, unrelated configuration cleanup, or any other maintenance
+work, and do not start the next ticket. Work you notice but must not do gets
+recorded here (see §9 and §13), never done opportunistically.
+
+**Evaluation is separate from decision-making** (§1a, `PHILOSOPHY.md` §1.1) —
+permanent and binding on every future ticket.
+
+**Never push to `main`; always work on a feature branch; open a PR and wait
+for human approval.** Never merge. Never force-push or rewrite pushed history.
+
+**A milestone is incomplete until this handoff is updated** and its revision
+history extended.
 
 ---
 
@@ -79,7 +98,7 @@ reviewed and **FROZEN** unless marked otherwise.
 | GM-030 (+r1, r2) | FROZEN / deployed | Streamlit manual-review prototype + console hub + deployment readiness |
 | GM-040 | Delivered, pending independent review | Operator workflow over the unchanged pipeline + live Ohtani evidence |
 | GM-040-HF1 | Delivered hotfix | `-e .` in requirements.txt so Community Cloud installs the project |
-| GM-041 | **IN PROGRESS** (this branch; see §12) — suite green, gates clean, blocked on the §5 PO ruling | First production deterministic grading engine (pure, config-driven) |
+| GM-041 | **COMPLETE, awaiting review** (see §12) | First production deterministic grading engine (pure, config-driven) + betting-classification removal |
 
 **GM-020 — ingestion vertical slice.** Objective: one real game/hitter/pitcher
 from live providers to two frozen snapshots with deterministic replay.
@@ -264,48 +283,48 @@ Fallbacks — and nothing else. The former signal engine (AVOID → STRONG_BET �
 LEAN → PASS, Q27's override-reason rule, and the Power Profile veto as a
 *signal* mechanism) is **removed from all future scope** per §1a.
 
-**Required reconciliation — BLOCKED ON A PO RULING (rev 3).** None of it is
-coded. The blast radius below was measured against the repository at rev 3, so
-the ruling can be made with the real cost in view:
+**Signal-removal amendment — DELIVERED (rev 4, PO ruling 2026-07-25).** Every
+betting classification is gone from the codebase: `Signal`, `signal`,
+`signal_reason`, Strong Bet, Lean, Pass, Avoid, and the recommendation-engine
+concept. What changed:
 
-- **Docs.** `docs/MODEL_SPEC.md` §16/§16.1 (the signal engine and its override)
-  plus the §15 and §17 sentences that reference signals; the Q27 closure and
-  the Q26 cross-reference in `docs/OPEN_QUESTIONS.md`; `docs/GLOSSARY.md` §
-  vocabulary (bound in lockstep by `tests/unit/domain/test_glossary_drift.py`,
-  which asserts both the `Signal` members and their documented priority
-  order); passing references in `ARCHITECTURE.md`, `PHILOSOPHY.md`,
-  `ENGINEERING_GUIDELINES.md`, ADR-0002 and ADR-0004.
-- **Frozen domain contract.** `EvaluatedGradeResult` REQUIRES `signal` and
-  `signal_reason` (both validated in `__post_init__`); `Signal` is a domain
-  enum. `NotEvaluableGradeResult` only mentions signals in prose.
-- **Frozen evaluation schema v1.** `evaluation/serialization.py` pins the
-  evaluated record's exact field set including `signal`/`signal_reason`, and
-  rejects those keys on a not-evaluable record. Removing them changes the
-  serialized shape, so the ruling must also say whether
-  `RECORD_SCHEMA_VERSION` stays 1 (amended in place — nothing durable has been
-  written yet, since no evaluation is persisted anywhere) or becomes 2.
-- **Config contract.** `AllocationConfig.signal_rules` is required
-  (`min_length=1`) with the typed `SignalRule`/`SignalClause`/`SignalCondition`
-  family, and §19 validation enforces one rule per `Signal`, the
-  AVOID→STRONG_BET→LEAN→PASS priority order, and a terminal always-rule.
-  Removal changes the semantic `config_hash` of every configuration.
-- **Goldens and fixtures.** Two of the three golden cases embed
-  `signal`/`signal_reason` (regeneration only via `scripts/update_goldens.py`
-  under this ticket); `tests/golden/stub_scorer.py`, the evaluation fixtures,
-  and roughly a dozen config/domain/golden test modules assert on signals.
-- **Not affected:** the ingestion pipeline, both evidence bundles, replay, and
-  the Streamlit UI. No rendered surface displays a signal today, and no
-  `GradeResult` is stored in any bundle — so replay determinism and the
-  archived evidence are untouched by this amendment.
-- **Open PO sub-question (do not decide silently).** The "strong category"
-  fraction (0.75 in the spec, compared unrounded) exists **only** to feed
-  signal conditions — confirmed: `_strong_categories` in the engine is its
-  sole behavioral consumer in `src`, and its only consumer is `_signal_for`.
-  Options: (a) keep it as a pure audit-trail annotation under the §1a Audit
-  Trail output, (b) keep it as a per-category annotation in the Component
-  Breakdown, or (c) remove it from the engine and the configuration schema.
-  Engineering recommends (a): it is descriptive, not advisory, so it survives
-  §1a, and it preserves an explanatory step in the derivation at no cost.
+- **Domain.** The `Signal` enum was deleted; `EvaluatedGradeResult` no longer
+  declares or validates `signal`/`signal_reason`. `NotEvaluableGradeResult` is
+  unchanged apart from prose.
+- **Evaluation schema v1, amended in place** (PO ruling: no v2). The evaluated
+  record's field set no longer admits the two keys, and the evaluated /
+  not-evaluable discriminator now keys on `grade`/`total_score` alone. No
+  migration was required because no production evaluation record exists
+  anywhere.
+- **Configuration.** `signal_rules`, the whole `SignalRule`/`SignalClause`/
+  `SignalCondition` family, and `strong_category_fraction` were removed from
+  the schema, the §19 validation, the loader's discriminated-union table, and
+  the package exports. §19 invariant 17 is retired. Every `config_hash` moves
+  as a result, which is correct and expected — no production configuration
+  version exists to invalidate.
+- **Strong-category fraction: removed entirely** (PO ruling). It existed only
+  to feed signal conditions and has no replacement metric.
+- **Engine.** `_signal_for`, `_signal_reason`, and `_strong_categories` are
+  gone; `score_snapshot` returns after grade assignment.
+- **Docs.** `MODEL_SPEC.md` §16 is now "Evaluation output (betting
+  classifications removed)" and carries the historical note; §3.1, §4, §15,
+  §17, and §19 were reconciled. `OPEN_QUESTIONS.md` Q27 is marked
+  **SUPERSEDED**, Q26 and Q3 are superseded in part. `GLOSSARY.md` lost the
+  Signal, Signal-override, and Strong-category entries and the `Signal` row of
+  the machine-checked vocabulary block. `ARCHITECTURE.md` (including risk R10,
+  now retired), `ENGINEERING_GUIDELINES.md`, `PHILOSOPHY.md`, ADR-0002,
+  ADR-0004, and `STREAMLIT_PROTOTYPE.md` were reconciled. `PHILOSOPHY.md`
+  §1.1 records the permanent evaluation-versus-decision principle.
+- **Goldens.** Regenerated through `scripts/update_goldens.py` (the only
+  approved write path). Because a schema amendment makes the *existing*
+  goldens unloadable, the script cannot read them to rewrite them; the two
+  now-unknown keys were stripped as a bootstrap so the script could load the
+  cases, and the committed bytes are the script's canonical output.
+- **Not affected, as predicted and re-verified:** the ingestion pipeline, both
+  evidence bundles, replay determinism, and the Streamlit UI.
+
+Historical notes explaining the removal are permitted throughout; production
+implementation references are not.
 
 Threshold philosophy: **all numeric rules are configuration data**
 (`GreenMachineConfig`): bucket boundaries half-open with a closed terminal
@@ -359,8 +378,8 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,504 tests green (rev 3) across
-hash seeds; ruff + mypy --strict clean.
+`streamlit_app.py`; evidence ships in-repo. 3,433 tests green (rev 4) across
+hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
 
@@ -394,12 +413,15 @@ hash seeds; ruff + mypy --strict clean.
 - First load of a run replays fully (~seconds), then caches per session.
 - Pitch composites/park use interim `SOURCE_UNAVAILABLE`; a derivation-pending
   MissingReason is an open vocabulary question.
-- GitHub `main` may lag local (local is authoritative); HF1 required `main`
-  sync — verify deployment alignment when touching requirements/entry files.
-  As of rev 3 this machine has **no GitHub access at all**: no `gh`, no
-  credentials, no local `main` branch, and `git ls-remote origin` times out.
-  Nothing on this branch has ever been pushed; the operator must push and open
-  the PR. Treat the local repository as authoritative until that changes.
+- **Repository history divergence** (§11a): local history and `origin/main`
+  share no ancestor, and `main` carries a nested duplicate project tree.
+  Resolved for GM-041 by the clean graft; the underlying duplication is
+  **deferred to its own cleanup ticket**.
+- `git push` works from this machine (Git Credential Manager is configured),
+  but **`gh` is not installed**, so a pull request cannot be opened from here.
+  Push the branch and open the PR through the GitHub web UI.
+- The orphaned `greenmachine-dashboard` gitlink blocks checkout of a
+  mainline-based branch until moved aside (§11a). Cleanup ticket.
 - Windows dev box: symlink tests skip; `sendmsg` guard test skips.
 
 ## 10. DEVELOPMENT RULES (standing; most are test-enforced)
@@ -434,80 +456,110 @@ evidence. Note: this development machine currently has NO GitHub
 credentials/`gh` — if pushing fails, commit locally and hand the operator
 exact push/PR commands.
 
-## 12. CURRENT MILESTONE — GM-041 (this branch) — **IN PROGRESS**
+## 11a. REPOSITORY HISTORY — DIVERGENCE AND CLEAN GRAFT (rev 4)
 
-**Objective:** first production deterministic grading engine.
-**Deliverables (unchanged except outputs):** `src/greenmachine/scoring/`
-engine consuming frozen `InputSnapshot`s + `GreenMachineConfig`, producing
-`EvaluatedGradeResult` / `NotEvaluableGradeResult` with a complete ordered
-audit derivation (every awarded AND unawarded point explained) and
-SAMPLE_WARNINGS findings. Per §1a the outputs are exactly: Total Score,
-Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks — **no signal of
-any kind**. Unit+integration tests over a disclaimed synthetic configuration;
-a sample evaluation of the real `run_gm040_ohtani` bundle under that
-synthetic config; guard updates (scoring leaves the placeholder list);
-handoff + docs.
-**Out of scope:** Today's Slate, bullpens, Record Book, betting
-classifications of any kind (§1a — permanent), dashboard redesign,
-historical calibration, persistence wiring, and any production configuration
-values.
-**Success criteria:** full suite + gates green; GM-040 evidence still replays
-byte-identically; engine is pure (no I/O, clock, network, pandas, floats);
-identical inputs give byte-identical serialized results; sample Ohtani
-evaluation generated and clearly labeled synthetic/non-production.
+**The problem.** The local repository and GitHub `main` have **no common
+ancestor**. `main` was built largely by web-UI uploads (its history contains
+commits named "Add files via upload", "Full Integration", "patch"), while the
+local history is rooted at the GM-040 baseline `8de28f7`, which does not exist
+on `main` at all. `git merge-base HEAD origin/main` returns nothing.
 
-### Exact state on `feature/gm041-production-grading-engine` (rev 3)
+`main` also carries a **complete duplicate copy of the project nested under
+`greenmachine/`**, in addition to the real project at its root, plus a
+`.gitattributes` (`* text=auto`) that the local root lacks.
 
-Nothing is uncommitted. The rev-2 working tree was committed verbatim in
-`4542b22` before any change, so the paused state stays inspectable, and the
-corrections landed on top in `17ed58f`.
+Consequently a PR from the original `feature/gm041-production-grading-engine`
+branch read as **293 files changed, 3,126 insertions, 64,874 deletions** —
+almost all of it proposing to delete `main`'s nested duplicate.
 
-Committed engine (unchanged since rev 2 except a typing annotation):
-- `src/greenmachine/scoring/engine.py` — `score_snapshot`, bucket resolution,
-  binary qualification, missing-data handling, aggregation, grade, strong
-  categories, signal, audit derivation. **Written before the §1a signal
-  ruling; its signal handling is exactly what the §5 amendment removes.**
-- `src/greenmachine/scoring/errors.py` (`ScoringError`, `ScoringConfigError`,
-  `ScoringInputError`); `__init__.py` re-exports the engine and the errors.
-  NOTE: the `__init__` docstring's first line still says "…grades, and
-  signals" — reword during the §5 reconciliation.
+**The resolution (PO ruling 2026-07-25): clean graft/replay.**
+`feature/gm041-production-grading-engine-mainline` branches directly from
+`origin/main` and replays only the intentional GM-041 delta.
 
-Committed test material:
-- `tests/unit/scoring/test_engine.py` — 23 tests, all passing.
-- `tests/fixtures/config/valid/gm041_engine_synthetic.yaml` — loudly
-  disclaimed synthetic config (deliberately wrong-for-baseball: category split
-  2.8/3.1/2.1/2.2/1.8, grade table 3.7/5.9/8.1/9.8, strong fraction 0.66) so
-  it can never be mistaken for the approved model.
-- `tests/fixtures/evaluations/gm041_engine_snapshots.py` — frozen RECENT_7D
-  snapshot builders over the fixture's eleven components, with per-test
-  control of values/missing/insufficient/absent/measurement.
-- `tests/architecture/test_scoring_boundaries.py` — **new**; replaces the
-  placeholder guards with purity guards (approved-import set, no third party,
-  no I/O or non-deterministic stdlib, no clock, no randomness, no float in
-  either spelling, no numeric literal beyond the additive identity), each with
-  meta-tests proving it bites. `scoring` was removed from the placeholder
-  lists in `tests/architecture/test_ingestion_boundaries.py` and
-  `tests/unit/docs/test_documentation_integrity.py`.
+Deliberately **not** carried across, and preserved as `main` has them:
+`.gitattributes`, the nested `greenmachine/` directory, the deployment
+structure, `.claude/settings.local.json` (machine-local), the `.gitignore`
+`*.zip` addition, and the root `GREENMACHINE_HANDOFF.md`. Repository cleanup —
+including whether the nested duplicate should exist at all — is **deferred to
+its own future ticket** and must not be done inside a feature ticket (§0).
 
-The two rev-2 failures were **test-side expectation defects, not engine
-defects**, and are fixed: one asserted a lower-case `MissingReason` (members
-are upper case by frozen design); the other drove an enabled fuzzy policy
-through the loader, which §19 validation rejects first, so the engine guard
-was unreachable — it is now split into the loader refusal and the engine
-refusal as two independent tests. Rev 2 §14 also understated the failure count
-as two: the placeholder guards were failing as well, since `scoring` had
-gained behavior.
+The original branch remains pushed as an **archival/reference branch**. Do not
+force-push or rewrite it.
 
-Verified at rev 3: full suite **3504 passed, 5 skipped** (Windows platform
-skips only); `ruff format --check .`, `ruff check .`, `mypy --strict src` all
-clean; both evidence bundles (`prospective_run`, `run_gm040_ohtani`) still
-replay byte-identically.
+**Consequences for anyone working here:**
+- Branch from `origin/main`, never from the archival branch.
+- `main`'s `.gitignore` does not ignore `*.zip`, and the working tree contains
+  release archives. **Never `git add -A`** on a mainline-based branch; stage
+  explicit paths.
+- The local tree carries `greenmachine-dashboard` as an orphaned gitlink
+  (mode 160000, no `.gitmodules`, contents just `.git` and `.gitattributes`)
+  while `main` tracks it as ordinary files. Checking out a mainline-based
+  branch fails until that directory is moved aside. It is cruft, but removing
+  it is cleanup and therefore its own ticket.
+- The full suite reports **one fewer test** on a mainline-based branch than on
+  the archival branch (3,503 rather than 3,504 at graft time) because `main`
+  has no root `GREENMACHINE_HANDOFF.md` and the documentation suite
+  parameterizes over root markdown files. Adding or removing any markdown file
+  under `docs/` or the root moves the count by design.
 
-**Remaining work, in order:** (1) **BLOCKED — the §5 signal-removal contract
-amendment needs a PO ruling** (spec + frozen domain/serialization contracts +
-config schema, with ruling text; see §5 for the measured blast radius);
-(2) align the engine to the six §1a outputs once ruled; (3) the sample Ohtani
-evaluation under the synthetic config; (4) full gates and PR.
+---
+
+## 12. CURRENT MILESTONE — GM-041 — **COMPLETE, AWAITING REVIEW**
+
+**Branch:** `feature/gm041-production-grading-engine-mainline` (grafted onto
+`origin/main`; see §11a).
+
+**Objective:** the first production deterministic grading engine, plus the
+Product-Owner-ruled removal of every betting classification.
+
+**Delivered:**
+- `src/greenmachine/scoring/` — `engine.py` (`score_snapshot`: bucket
+  resolution, binary qualification, missing-data handling, category and total
+  aggregation, grade assignment, ordered audit derivation), `errors.py`
+  (`ScoringError`, `ScoringConfigError`, `ScoringInputError`), `__init__.py`.
+  Pure: no I/O, clock, network, randomness, pandas, or float.
+- Engine output is exactly the six §1a items: Total Score, Tier, Component
+  Breakdown, Audit Trail, Warnings, Fallbacks.
+- The signal-removal amendment across domain, evaluation schema v1,
+  configuration, engine, tests, goldens, and documentation (§5).
+- `tests/unit/scoring/test_engine.py` — 24 tests over the disclaimed synthetic
+  configuration, including a guard asserting the result carries no betting
+  classification in any field or serialized byte.
+- `tests/architecture/test_scoring_boundaries.py` — purity guards (approved
+  imports, no third party, no I/O or non-deterministic stdlib, no clock, no
+  randomness, no float in either spelling, no numeric literal beyond the
+  additive identity), each with a meta-test proving it bites. `scoring` left
+  the placeholder lists in `test_ingestion_boundaries.py` and
+  `test_documentation_integrity.py`.
+- `tests/fixtures/config/valid/gm041_engine_synthetic.yaml` and
+  `tests/fixtures/evaluations/gm041_engine_snapshots.py`.
+- `scripts/generate_gm041_sample_evaluation.py` → `docs/samples/` (§12a).
+
+**Verified:** full suite **3,433 passed / 5 skipped** (Windows platform skips
+only) across `PYTHONHASHSEED` 0, 1, and 42; `ruff format --check .`,
+`ruff check .`, `mypy --strict src` all clean; **both** evidence bundles
+(`prospective_run`, `run_gm040_ohtani`) still replay byte-identically.
+
+**Out of scope (unchanged):** Today's Slate, bullpens, Record Book, betting
+classifications of any kind (permanent), dashboard redesign, historical
+calibration, persistence wiring, production configuration values, and — per §0
+and §11a — all repository cleanup.
+
+### 12a. The sample evaluation
+
+`scripts/generate_gm041_sample_evaluation.py` runs the real engine over the
+real archived Ohtani snapshots under the disclaimed synthetic configuration and
+writes `docs/samples/gm041_sample_evaluation.{json,md}`. It reads the evidence
+bundle and never writes to it, reads no clock, and is byte-identical on rerun
+(verified).
+
+Under the synthetic configuration the RECENT_7D profile totals **5.15 (tier
+C)** and LONG_TERM_2Y totals **7.1 (tier B)**, each with a 20-entry audit
+trail. The four components the GM-020 pipeline cannot yet supply —
+`pitch_mix_pressure`, `put_away_pitch_exploitation`, `park`, `weather` — take
+`record_missing` zeros with their reason on the record, and the
+`attack_angle_quality` fallback provenance is surfaced. **These numbers are
+demonstration only and say nothing about the hitter.**
 
 ## 13. FUTURE ROADMAP
 
@@ -536,6 +588,14 @@ database exists or is currently permitted); and a PO definition of "unit"
 for the Unit Tracker / ROI Summary consistent with §1a (GreenMachine records
 the user's own results and the model's calibration — it still never advises).
 
+**Recommended next tickets (unnumbered until the PO assigns them):**
+- **Repository cleanup** (§11a): reconcile the divergent histories, decide the
+  fate of `main`'s nested `greenmachine/` duplicate, and settle `.gitattributes`
+  and `.gitignore` drift. Deliberately excluded from GM-041.
+- PO resolves Q11-Q14 → the first production model-configuration version
+  (data-only ticket) + golden regeneration under the real engine.
+- Evaluation persistence wiring, so evaluations are stored and queryable.
+
 **After GM-042 (recommended, unnumbered until the PO assigns tickets):**
 - PO resolves Q11–Q14 → first production model-configuration version
   (data-only ticket) + golden regeneration under the real engine.
@@ -554,9 +614,8 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3504 passed as of rev 3, plus
-   five Windows platform skips). The rev-2 GM-041 failures are fixed; any
-   failure now is a real regression.
+3. `python -m pytest -q` — expect fully green (3,433 passed as of rev 4, plus
+   five Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
    evidence/gm020_vertical_slice/run_gm040_ohtani` → "replay OK".
@@ -572,10 +631,12 @@ orchestration `src/greenmachine/ingestion/orchestration.py`; evidence root
 `evidence/gm020_vertical_slice/` (bundles: `prospective_run`,
 `run_gm040_ohtani`); goldens `tests/golden/cases/`; synthetic sample policy
 `tests/fixtures/ingestion/gm020_nonproduction_sample_policy.json`; synthetic
-engine config (GM-041, committed at rev 3)
+engine config (GM-041)
 `tests/fixtures/config/valid/gm041_engine_synthetic.yaml` with snapshot
 builders in `tests/fixtures/evaluations/gm041_engine_snapshots.py`; scoring
-purity guards `tests/architecture/test_scoring_boundaries.py`.
+purity guards `tests/architecture/test_scoring_boundaries.py`; sample
+evaluation `docs/samples/gm041_sample_evaluation.{json,md}` generated by
+`scripts/generate_gm041_sample_evaluation.py`.
 
 **Configuration files:** `pyproject.toml` (version SSOT, extras, tool config),
 `requirements.txt` (deployment; `-e .` first), `.streamlit/config.toml`,
@@ -595,6 +656,7 @@ python scripts/run_gm040_real_slice.py capture --slate-date YYYY-MM-DD \
   --capture-mode prospective                   # live capture (real network)
 python scripts/run_gm040_real_slice.py replay --run-dir <bundle>
 python scripts/build_release_archive.py --output <name>.zip
+python scripts/generate_gm041_sample_evaluation.py   # synthetic sample eval
 ```
 
 **Developer notes:** PowerShell mangles UTF-8 on `-replace` file rewrites —
@@ -609,5 +671,6 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
-| 3 | 2026-07-25 | this commit, same branch | **GM-041 RESUMED.** The rev-2 working tree was committed verbatim (`4542b22`) so the paused state stays inspectable, then corrected (`17ed58f`). Both rev-2 failures were diagnosed as **test-side expectation defects, not engine defects** (a lower-case `MissingReason` assertion; a fuzzy-policy test whose config the §19 loader rejects first, making the engine guard unreachable — now split into the loader refusal and the engine refusal). Rev 2 §14 understated the failure count as two: the two placeholder guards were failing as well, because `scoring` had gained behavior. Those guards are retired — `scoring` leaves the placeholder lists in `test_ingestion_boundaries.py` and `test_documentation_integrity.py`, replaced by the new `tests/architecture/test_scoring_boundaries.py`, which enforces the §12 purity criteria structurally (approved imports, no third party, no I/O, no clock, no randomness, no float, no embedded numeric threshold) with meta-tests. Gate fixes on the WIP: `_OPERATORS` annotated (four `no-any-return` errors clear under `mypy --strict`), one en dash removed for RUF002, `ruff format` applied. §5 now carries the **measured** blast radius of the pending signal-removal amendment (docs, domain contract, evaluation schema v1 with the explicit v1-vs-v2 question, config schema and `config_hash`, goldens; ingestion/replay/evidence/UI confirmed unaffected) and scopes the strong-category sub-question with a recommendation. §12 rewritten as the current in-progress state; §2/§3/§7/§9/§14/§15 refreshed against the repository. Verified: 3504 passed / 5 skipped, all gates clean, both evidence bundles replay byte-identically. |
+| 4 | 2026-07-25 | this commit, on `feature/gm041-production-grading-engine-mainline` | **GM-041 COMPLETE, awaiting review.** Two Product Owner rulings implemented. (1) **Repository history**: the previous branch shared no ancestor with `origin/main`, so a PR from it proposed 279 deletions of `main`'s nested duplicate project tree. Resolved by the approved clean graft — a new branch from `origin/main` replaying only the intentional GM-041 delta, preserving `.gitattributes`, the nested `greenmachine/` directory, and the deployment structure, and excluding `.claude/settings.local.json` and incidental baseline drift. The old branch stays as an archival reference and is not rewritten. Recorded in the new §11a. (2) **Betting-classification removal**: `Signal`, `signal`, `signal_reason`, the configuration rule family, and the `strong_category_fraction` were removed from the domain contract, evaluation record schema v1 (amended in place, no v2), the configuration schema and §19 validation, the loader union table, the engine, the fixtures, and the tests; goldens regenerated through `scripts/update_goldens.py`; MODEL_SPEC §16 rewritten as an evaluation-output section with a historical note; Q27 marked SUPERSEDED and Q3/Q26 superseded in part; GLOSSARY, ARCHITECTURE (risk R10 retired), ENGINEERING_GUIDELINES, PHILOSOPHY, ADR-0002, ADR-0004, and STREAMLIT_PROTOTYPE reconciled. Added the permanent principle to `PHILOSOPHY.md` §1.1 and the new §0 standing process rules here, including the **one-ticket-at-a-time** rule. Added `scripts/generate_gm041_sample_evaluation.py` and the labeled synthetic Ohtani sample evaluation in `docs/samples/` (§12a), byte-identical on rerun. Verified: 3,433 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles still replay byte-identically. |
+| 3 | 2026-07-25 | `598ed65` on `feature/gm041-production-grading-engine` (archival) | **GM-041 RESUMED.** The rev-2 working tree was committed verbatim (`4542b22`) so the paused state stays inspectable, then corrected (`17ed58f`). Both rev-2 failures were diagnosed as **test-side expectation defects, not engine defects** (a lower-case `MissingReason` assertion; a fuzzy-policy test whose config the §19 loader rejects first, making the engine guard unreachable — now split into the loader refusal and the engine refusal). Rev 2 §14 understated the failure count as two: the two placeholder guards were failing as well, because `scoring` had gained behavior. Those guards are retired — `scoring` leaves the placeholder lists in `test_ingestion_boundaries.py` and `test_documentation_integrity.py`, replaced by the new `tests/architecture/test_scoring_boundaries.py`, which enforces the §12 purity criteria structurally (approved imports, no third party, no I/O, no clock, no randomness, no float, no embedded numeric threshold) with meta-tests. Gate fixes on the WIP: `_OPERATORS` annotated (four `no-any-return` errors clear under `mypy --strict`), one en dash removed for RUF002, `ruff format` applied. §5 now carries the **measured** blast radius of the pending signal-removal amendment (docs, domain contract, evaluation schema v1 with the explicit v1-vs-v2 question, config schema and `config_hash`, goldens; ingestion/replay/evidence/UI confirmed unaffected) and scopes the strong-category sub-question with a recommendation. §12 rewritten as the current in-progress state; §2/§3/§7/§9/§14/§15 refreshed against the repository. Verified: 3504 passed / 5 skipped, all gates clean, both evidence bundles replay byte-identically. |
 | 2 | 2026-07-25 | `3ac1c7d`, same branch | **GM-041 officially PAUSED** with its exact in-progress state recorded (§12: committed engine/errors modules, uncommitted `__init__` diff, three untracked test/fixture files, 20/22 tests passing with the two named failures, resumption order). Recorded the approved product-identity rulings (§1a): GreenMachine is an evaluation platform, not a betting advisor; betting classifications (Lean/Avoid/Pass/Strong-Bet) removed from all future scope; engine outputs restricted to Total Score, Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks; the user makes the decision. §5 rewritten accordingly with the required MODEL_SPEC §16 / `EvaluatedGradeResult` / config signal-rule reconciliation steps and the open strong-category question. §8 reframed betting items as permanently out. §13 replaced with the approved **GM-042 Record Book & Performance Analytics** scope (Season Summary, Daily Results, Unit Tracker, ROI Summary, Performance Analytics, Model Calibration, Historical Archive, Revision History; explicitly excluding Average Odds, CLV, Average Confidence Tier — the Record Book measures GreenMachine's historical performance, not sportsbook market efficiency) plus unnumbered follow-ons. Appendix fixture paths corrected; quick-start updated for the pause. |

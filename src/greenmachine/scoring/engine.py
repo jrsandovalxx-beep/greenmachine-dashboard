@@ -27,9 +27,12 @@ Execution follows ``MODEL_SPEC.md``:
   exactly one advisory ``SAMPLE_WARNINGS`` finding (the frozen result
   contract enforces it);
 * §3 aggregation — plain exact-Decimal sums, no rounding anywhere;
-* grades from the configured half-open cutoffs (terminal inclusive), and the
-  signal from the configured priority-ordered rules, first match wins, with
-  its stable reason code.
+* §14 grades from the configured half-open cutoffs, terminal inclusive.
+
+The engine's entire output is Total Score, Tier, Component Breakdown, Audit
+Trail, Warnings, and Fallbacks. GM-041 removed the betting-classification
+engine: GreenMachine separates evaluation from decision-making, and any
+wagering, fantasy, or DFS decision belongs entirely to the user.
 """
 
 from __future__ import annotations
@@ -42,12 +45,10 @@ from greenmachine.common.errors import ErrorContext
 from greenmachine.config import (
     BinaryScoring,
     BucketedScoring,
-    CategoryAllocation,
     ComponentConfig,
     ComponentProfileConfig,
     GreenMachineConfig,
     QualificationPredicate,
-    SignalRule,
 )
 from greenmachine.domain import (
     AuditEntry,
@@ -63,7 +64,6 @@ from greenmachine.domain import (
     MissingObservation,
     NotEvaluableGradeResult,
     SampleStatus,
-    Signal,
     UnavailableRequiredInput,
     ValidationFinding,
     ValidationInputId,
@@ -461,7 +461,7 @@ def _handle_missing(
 
 
 # --------------------------------------------------------------------------
-# Aggregation, grade, signal
+# Aggregation and grade
 # --------------------------------------------------------------------------
 
 
@@ -533,104 +533,6 @@ def _grade_for(config: GreenMachineConfig, total: Decimal, audit: _Audit) -> Gra
     raise ScoringConfigError(  # pragma: no cover - §19 exhaustiveness forbids this
         f"no grade cutoff contains total {_plain(total)}"
     )
-
-
-def _strong_categories(
-    config: GreenMachineConfig,
-    category_scores: tuple[CategoryScore, ...],
-    audit: _Audit,
-) -> tuple[Category, ...]:
-    fraction = config.allocations.strong_category_fraction
-    allocations: dict[Category, CategoryAllocation] = {
-        allocation.category: allocation for allocation in config.allocations.categories
-    }
-    strong: list[Category] = []
-    details: list[str] = []
-    for score in category_scores:
-        threshold = allocations[score.category].max_points * fraction
-        is_strong = score.points_awarded >= threshold
-        details.append(
-            f"{score.category.value}: {_plain(score.points_awarded)} >= "
-            f"{_plain(threshold)} = {'true' if is_strong else 'false'}"
-        )
-        if is_strong:
-            strong.append(score.category)
-    audit.add(
-        stage="strong_category_check",
-        rule_reference=_rule_ref(config, "allocations", "strong_category_fraction"),
-        input_summary="; ".join(details),
-        output_summary=f"strong categories: {len(strong)}",
-        explanation=(
-            f"a category is strong at >= {_plain(fraction)} of its configured maximum, "
-            f"compared without rounding (MODEL_SPEC §3.1)"
-        ),
-    )
-    return tuple(strong)
-
-
-def _signal_for(
-    config: GreenMachineConfig,
-    grade: Grade,
-    total: Decimal,
-    category_scores: tuple[CategoryScore, ...],
-    strong: tuple[Category, ...],
-    audit: _Audit,
-) -> tuple[Signal, str]:
-    by_category = {score.category: score.points_awarded for score in category_scores}
-
-    def condition_holds(condition: object) -> bool:
-        condition_type = getattr(condition, "type", None)
-        if condition_type == "always":
-            return True
-        if condition_type == "grade_in":
-            return grade in condition.grades  # type: ignore[attr-defined]
-        if condition_type == "total_score":
-            return _OPERATORS[condition.operator](total, condition.value)  # type: ignore[attr-defined]
-        if condition_type == "category_score":
-            return _OPERATORS[condition.operator](  # type: ignore[attr-defined]
-                by_category[condition.category],  # type: ignore[attr-defined]
-                condition.value,  # type: ignore[attr-defined]
-            )
-        if condition_type == "strong_category_count":
-            return _OPERATORS[condition.operator](  # type: ignore[attr-defined]
-                Decimal(len(strong)),
-                Decimal(condition.count),  # type: ignore[attr-defined]
-            )
-        raise ScoringConfigError(  # pragma: no cover - schema forbids unknown types
-            f"unknown signal condition type {condition_type!r}"
-        )
-
-    for rule in sorted(config.allocations.signal_rules, key=lambda entry: entry.priority):
-        for clause_index, clause in enumerate(rule.any_of):
-            if all(condition_holds(condition) for condition in clause.all_of):
-                reason = _signal_reason(rule)
-                audit.add(
-                    stage="signal_assignment",
-                    rule_reference=_rule_ref(
-                        config, "allocations", "signal_rules", f"priority_{rule.priority}"
-                    ),
-                    input_summary=(
-                        f"grade {grade.value}, total {_plain(total)}, "
-                        f"{len(strong)} strong categories; clause {clause_index + 1} of "
-                        f"rule priority {rule.priority} matched"
-                    ),
-                    output_summary=f"signal {rule.signal.value} (reason: {reason})",
-                    explanation=(
-                        "signal rules are evaluated in strict priority order and the "
-                        "first matching clause wins; an override records its stable "
-                        "reason code (MODEL_SPEC §16, §16.1)"
-                    ),
-                )
-                return rule.signal, reason
-    raise ScoringConfigError(  # pragma: no cover - §19 requires a terminal always-rule
-        "no signal rule matched; the configuration lacks a terminal rule"
-    )
-
-
-def _signal_reason(rule: SignalRule) -> str:
-    if rule.override_reason is not None:
-        return rule.override_reason
-    return f"signal_priority_{rule.priority}_{rule.signal.value.lower()}"
 
 
 # --------------------------------------------------------------------------
@@ -767,7 +669,7 @@ def score_snapshot(
             stage="evaluability_verdict",
             rule_reference=_rule_ref(config, "components", "missing_data"),
             input_summary=f"required input(s) unavailable: {names}",
-            output_summary="NOT_EVALUABLE (no score, grade, or signal exists)",
+            output_summary="NOT_EVALUABLE (no score or grade exists)",
             explanation=(
                 "NOT_EVALUABLE is a distinct terminal state, never a low grade (MODEL_SPEC §15)"
             ),
@@ -800,8 +702,6 @@ def score_snapshot(
     )
 
     grade = _grade_for(config, total, audit)
-    strong = _strong_categories(config, category_scores, audit)
-    signal, signal_reason = _signal_for(config, grade, total, category_scores, strong, audit)
 
     return EvaluatedGradeResult(
         window_profile=snapshot.window_profile,
@@ -815,6 +715,4 @@ def score_snapshot(
         category_scores=category_scores,
         total_score=total,
         grade=grade,
-        signal=signal,
-        signal_reason=signal_reason,
     )

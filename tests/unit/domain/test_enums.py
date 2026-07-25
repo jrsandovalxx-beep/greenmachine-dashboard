@@ -26,7 +26,6 @@ from greenmachine.domain import (
     ProviderId,
     SampleStatus,
     SampleType,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -44,7 +43,6 @@ ALL_ENUMS: tuple[type[Enum], ...] = (
     ProviderId,
     SampleStatus,
     SampleType,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -166,10 +164,6 @@ def test_evaluation_status_members() -> None:
 def test_grade_members() -> None:
     """MODEL_SPEC.md 14. Cutoffs live in configuration, not on the enum."""
     assert values(Grade) == {"S", "A", "B", "C", "D"}
-
-
-def test_signal_members() -> None:
-    assert values(Signal) == {"STRONG_BET", "LEAN", "PASS", "AVOID"}
 
 
 def test_categories_match_the_spec() -> None:

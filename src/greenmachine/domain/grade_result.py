@@ -10,9 +10,15 @@ The two terminal states of ``MODEL_SPEC.md`` §15 are *different types*, not one
 type with half its fields optional:
 
 * :class:`EvaluatedGradeResult` — a complete grade: component and category
-  scores, a total, a grade, a signal, and its reason code.
-* :class:`NotEvaluableGradeResult` — no score, grade, or signal at all; instead,
-  the required inputs that were unavailable and why.
+  scores, a total, and a grade.
+* :class:`NotEvaluableGradeResult` — no score or grade at all; instead, the
+  required inputs that were unavailable and why.
+
+GM-041 removed the betting-classification fields (``signal`` and
+``signal_reason``) from this contract. GreenMachine separates evaluation from
+decision-making: the platform's responsibility ends at a transparent,
+deterministic, auditable evaluation, and any wagering, fantasy, or DFS
+decision belongs entirely to the user.
 
 The variant *is* the :class:`EvaluationStatus`; a caller cannot select a status
 that contradicts the fields, and an evaluated result missing a required field or
@@ -34,7 +40,6 @@ from ._guards import (
     ensure_non_negative_decimal,
     ensure_non_negative_int,
     ensure_optional_instance,
-    ensure_stable_code,
     ensure_tuple_of,
 )
 from .enums import (
@@ -45,7 +50,6 @@ from .enums import (
     MeasurementId,
     MissingReason,
     SampleStatus,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -235,17 +239,15 @@ class EvaluatedGradeResult(GradeResult):
     """A complete grade. Its status is always ``EVALUATED``.
 
     Requires every evaluated field: the component and category scores, the total,
-    the grade, the signal, and the signal's stable reason code. An insufficient
-    present sample must carry exactly one advisory ``SAMPLE_WARNINGS`` finding for
-    its component — advisory only, never altering score, grade, or signal.
+    and the grade. An insufficient present sample must carry exactly one advisory
+    ``SAMPLE_WARNINGS`` finding for its component — advisory only, never altering
+    score or grade.
     """
 
     component_scores: tuple[ComponentScore, ...]
     category_scores: tuple[CategoryScore, ...]
     total_score: Decimal
     grade: Grade
-    signal: Signal
-    signal_reason: str
 
     def __post_init__(self) -> None:
         self._validate_common()
@@ -270,8 +272,6 @@ class EvaluatedGradeResult(GradeResult):
             )
         ensure_non_negative_decimal(self.total_score, "EvaluatedGradeResult.total_score")
         ensure_instance(self.grade, Grade, "EvaluatedGradeResult.grade")
-        ensure_instance(self.signal, Signal, "EvaluatedGradeResult.signal")
-        ensure_stable_code(self.signal_reason, "EvaluatedGradeResult.signal_reason")
 
         ensure_no_duplicates(
             [score.category for score in category_scores],
@@ -403,7 +403,7 @@ class EvaluatedGradeResult(GradeResult):
 class NotEvaluableGradeResult(GradeResult):
     """A not-evaluable outcome. Its status is always ``NOT_EVALUABLE``.
 
-    Carries no total score, grade, signal, or signal reason — those fields do not
+    Carries no total score and no grade — those fields do not
     exist on this type. Instead it requires at least one
     :class:`UnavailableRequiredInput` explaining what was missing and why.
     """

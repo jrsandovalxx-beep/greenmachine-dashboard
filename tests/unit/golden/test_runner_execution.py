@@ -437,7 +437,7 @@ def test_mismatch_error_includes_case_id_and_every_difference(tmp_path: Path) ->
 
     def two_mutations(parsed: dict) -> None:  # type: ignore[type-arg]
         parsed["payload"]["total_score"] = "9.999"
-        parsed["payload"]["signal_reason"] = "synthetic_other_reason"
+        parsed["payload"]["grade"] = "S"
 
     mutate_expected(directory, two_mutations)
     case = load_case(directory)
@@ -448,7 +448,7 @@ def test_mismatch_error_includes_case_id_and_every_difference(tmp_path: Path) ->
     message = str(failure.value)
     assert RECENT_CASE_ID in message
     assert "payload.total_score" in message
-    assert "payload.signal_reason" in message
+    assert "payload.grade" in message
     assert failure.value.case_id == RECENT_CASE_ID
     assert len(failure.value.differences) == 2
 

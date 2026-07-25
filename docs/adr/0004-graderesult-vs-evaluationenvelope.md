@@ -20,7 +20,7 @@ Two separate contracts.
 
 **`GradeResult`** — the pure deterministic output of `(frozen EvaluationInput, model
 configuration)`. Contains: evaluation status, selected window profile, metric observations,
-bucket results, metric scores, category scores, total score, grade, signal, validation findings,
+bucket results, metric scores, category scores, total score, grade, validation findings,
 and the complete audit derivation. It contains **no timestamp, no identity, no version, and no
 hash**.
 

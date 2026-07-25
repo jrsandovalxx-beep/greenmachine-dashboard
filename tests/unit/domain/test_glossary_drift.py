@@ -35,7 +35,6 @@ from greenmachine.domain import (
     ProviderId,
     SampleStatus,
     SampleType,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -61,7 +60,6 @@ EXPORTED_ENUMS: dict[str, type[Enum]] = {
         ProviderId,
         SampleStatus,
         SampleType,
-        Signal,
         ValidationInputId,
         WindowProfile,
     )
@@ -132,23 +130,6 @@ def test_enum_members_match_the_glossary_exactly(
         f"  code:     {in_code}\n"
         f"  glossary: {documented}"
     )
-
-
-def test_signal_declaration_order_is_the_approved_priority_order() -> None:
-    """MODEL_SPEC §16 / Q27: AVOID is evaluated first and the first match wins.
-
-    The enum is declared in priority order so no reader infers precedence from a
-    different ordering. This asserts the vocabulary only — signal resolution is
-    Sprint 2.
-    """
-    assert list(Signal) == [Signal.AVOID, Signal.STRONG_BET, Signal.LEAN, Signal.PASS]
-
-
-def test_signal_priority_order_is_documented(
-    glossary_vocabulary: dict[str, list[str]],
-) -> None:
-    """The glossary records the same priority order the enum declares."""
-    assert glossary_vocabulary["Signal"] == ["AVOID", "STRONG_BET", "LEAN", "PASS"]
 
 
 def test_removed_form_metrics_are_absent_from_the_glossary() -> None:

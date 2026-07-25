@@ -40,7 +40,7 @@ Hub destinations:
 
 ## What it intentionally does NOT do
 
-- no automated scoring, grading, or signal of any kind (no STRONG_BET / LEAN
+- no automated scoring, grading, or classification of any kind (no betting
   / PASS / AVOID, no recommendation, no betting output);
 - no live provider request — archived runs only, verified read-only;
 - no full-slate aggregation; one run, one hitter, one game;

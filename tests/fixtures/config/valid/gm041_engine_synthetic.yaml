@@ -2,9 +2,8 @@
 #
 # Every number here is deliberately wrong for baseball so it can never be
 # mistaken for the approved model: the category split is 2.8/3.1/2.1/2.2/1.8
-# rather than the specified 3/3/2/2/2, the grade table is 3.7/5.9/8.1/9.8
-# rather than 4/6/8/10, and the strong-category fraction is 0.66 rather than
-# 0.75. Engineering does not invent baseball thresholds; the production
+# rather than the specified 3/3/2/2/2, and the grade table is 3.7/5.9/8.1/9.8
+# rather than 4/6/8/10. Engineering does not invent baseball thresholds; the production
 # allocations, buckets, and minimums remain open Product Owner decisions
 # (Q11-Q16). This fixture exists only to exercise the GM-041 engine against
 # real archived snapshots, so its missing-data rules anticipate exactly the
@@ -18,7 +17,6 @@ fuzzy_scoring:
   enabled: false
 
 allocations:
-  strong_category_fraction: "0.66"
   total_max_points: "12"
 
   categories:
@@ -44,30 +42,6 @@ allocations:
     - { grade: B, lower: "5.9", upper: "8.1", terminal: false }
     - { grade: A, lower: "8.1", upper: "9.8", terminal: false }
     - { grade: S, lower: "9.8", upper: "12", terminal: true }
-
-  signal_rules:
-    - priority: 1
-      signal: AVOID
-      override_reason: synthetic_power_profile_veto
-      any_of:
-        - all_of:
-            - { type: category_score, category: power_profile, operator: less_than, value: "0.9" }
-    - priority: 2
-      signal: STRONG_BET
-      any_of:
-        - all_of:
-            - { type: grade_in, grades: [S, A] }
-            - { type: strong_category_count, operator: at_least, count: 3 }
-    - priority: 3
-      signal: LEAN
-      any_of:
-        - all_of:
-            - { type: grade_in, grades: [A, B] }
-    - priority: 4
-      signal: PASS
-      any_of:
-        - all_of:
-            - { type: always }
 
 components:
   - component_id: exit_velocity

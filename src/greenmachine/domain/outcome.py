@@ -5,7 +5,7 @@ them makes a pregame record mutable and hands every reader the future. So the
 outcome is its own minimal contract, carrying only game and batter identity and
 the single fact backtesting needs — whether the batter hit at least one home run.
 
-There is deliberately no field here for a grade, signal, wager, odds, profit, or
+There is deliberately no field here for a grade, wager, odds, profit, or
 timestamp, and — enforced structurally elsewhere — no outcome-shaped field on any
 evaluation contract. Research joins the two at analysis time, explicitly. Sprint 1
 delivers this contract and its tests only; no outcome ingestion exists.

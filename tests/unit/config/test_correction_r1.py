@@ -1,8 +1,10 @@
 """Regression tests for the GM-003 r1 correction pass.
 
 Each area the review flagged: global-context independence, semantic grade order,
-the unconditional signal fallback, override-reason identifiers, closed
-raw-exception escapes, and normalized union error paths.
+closed raw-exception escapes, and normalized union error paths.
+
+The unconditional-fallback and override-reason sections were removed with the
+signal engine in GM-041.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from collections.abc import Iterator
 
 import pytest
 import yaml
-from config_fixtures import AVOID_RULE, GRADE_D, GRADE_S, mutate
+from config_fixtures import GRADE_D, GRADE_S, mutate
 from pydantic import ValidationError
 
 from greenmachine.common.errors import ConfigurationError
@@ -184,122 +186,6 @@ def test_the_canonical_grade_order_is_accepted() -> None:
 
 
 # --------------------------------------------------------------------------
-# 3. Unconditional signal fallback
-# --------------------------------------------------------------------------
-
-
-def test_always_combined_with_another_condition_is_rejected() -> None:
-    text = mutate(
-        "            - { type: always }",
-        "            - { type: always }\n            - { type: total_score, operator: at_least,"
-        ' value: "0" }',
-    )
-    error = reject_semantic(text)
-
-    assert "exactly one clause of one 'always' condition" in str(error)
-
-
-def test_extra_clauses_beside_the_final_always_clause_is_rejected() -> None:
-    text = mutate(
-        "        - all_of:\n            - { type: always }",
-        "        - all_of:\n            - { type: always }\n        - all_of:\n"
-        "            - { type: grade_in, grades: [D] }",
-    )
-    error = reject_semantic(text)
-
-    assert "exactly one clause of one 'always' condition" in str(error)
-
-
-def test_a_duplicate_always_condition_is_rejected() -> None:
-    text = mutate(
-        "            - { type: always }",
-        "            - { type: always }\n            - { type: always }",
-    )
-    error = reject_semantic(text)
-
-    assert "exactly one clause of one 'always' condition" in str(error)
-
-
-def test_always_on_a_non_final_rule_is_rejected() -> None:
-    """Placed on AVOID as an additional clause."""
-    text = mutate(
-        AVOID_RULE + "\n      any_of:",
-        AVOID_RULE + "\n      any_of:\n        - all_of:\n            - { type: always }",
-    )
-    error = reject_semantic(text)
-
-    assert "only the final fallback rule may use the 'always' condition" in str(error)
-    assert "AVOID" in str(error)
-
-
-def test_the_final_rule_without_the_fallback_shape_is_rejected() -> None:
-    text = mutate(
-        "            - { type: always }",
-        '            - { type: total_score, operator: at_least, value: "0" }',
-    )
-    error = reject_semantic(text)
-
-    assert "exactly one clause of one 'always' condition" in str(error)
-
-
-def test_the_valid_unconditional_fallback_is_accepted() -> None:
-    config = load_config(VALID_PATH)
-    final = config.allocations.signal_rules[-1]
-
-    assert final.signal.value == "PASS"
-    assert len(final.any_of) == 1
-    assert len(final.any_of[0].all_of) == 1
-    assert final.any_of[0].all_of[0].type == "always"
-
-
-# --------------------------------------------------------------------------
-# 4. Override reason codes as stable identifiers
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "reason",
-    [
-        "not stable!",
-        "spaces allowed",
-        "UPPER_CASE",
-        "-leading",
-        "trailing-",
-        "dotted.code",
-        " okay ",
-    ],
-)
-def test_an_invalid_override_reason_is_rejected(reason: str) -> None:
-    text = mutate(
-        "      override_reason: synthetic_power_veto", f"      override_reason: {reason!r}"
-    )
-    error = reject_semantic(text)
-
-    assert "stable identifier" in str(error)
-    assert error.context.key_path == ("allocations", "signal_rules", "0", "override_reason")
-
-
-@pytest.mark.parametrize(
-    "reason", ["power_profile_veto", "synthetic_power_veto", "sample_override_2"]
-)
-def test_a_valid_override_reason_is_accepted(reason: str) -> None:
-    text = mutate("      override_reason: synthetic_power_veto", f"      override_reason: {reason}")
-
-    config = load_config_text(text)
-
-    assert config.allocations.signal_rules[0].override_reason == reason
-
-
-def test_override_reason_remains_optional() -> None:
-    """Removing it entirely is still valid."""
-    text = mutate("      override_reason: synthetic_power_veto\n", "")
-
-    config = load_config_text(text)
-
-    assert config.allocations.signal_rules[0].override_reason is None
-
-
-# --------------------------------------------------------------------------
 # 5. No raw exception escapes
 # --------------------------------------------------------------------------
 
@@ -411,41 +297,6 @@ def test_an_unknown_key_in_a_binary_predicate_comparison_is_located() -> None:
     assert "binary" not in key_path
     assert key_path[-1] == "surprise"
     assert "predicate" in key_path
-
-
-@pytest.mark.parametrize(
-    ("discriminator", "old", "new"),
-    [
-        ("grade_in", "{ type: grade_in, grades: [S] }", "{ type: grade_in, grades: [S], x: 1 }"),
-        (
-            "total_score",
-            '{ type: total_score, operator: at_least, value: "6.85" }',
-            '{ type: total_score, operator: at_least, value: "6.85", x: 1 }',
-        ),
-        (
-            "category_score",
-            '{ type: category_score, category: power_profile, operator: at_most, value: "1.15" }',
-            "{ type: category_score, category: power_profile, operator: at_most,"
-            ' value: "1.15", x: 1 }',
-        ),
-        (
-            "strong_category_count",
-            "{ type: strong_category_count, operator: at_least, count: 3 }",
-            "{ type: strong_category_count, operator: at_least, count: 3, x: 1 }",
-        ),
-        ("always", "{ type: always }", "{ type: always, x: 1 }"),
-    ],
-)
-def test_an_unknown_key_in_each_signal_condition_has_no_discriminator_segment(
-    discriminator: str, old: str, new: str
-) -> None:
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(mutate(old, new), file_path="synthetic.yaml")
-
-    key_path = caught.value.context.key_path
-    assert discriminator not in key_path
-    assert key_path[-1] == "x"
-    assert "signal_rules" in key_path
 
 
 def test_a_missing_key_inside_a_union_is_also_normalized() -> None:

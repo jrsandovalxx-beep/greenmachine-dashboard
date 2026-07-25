@@ -61,8 +61,11 @@ expected starter known at snapshot time, with the role recorded as `opener`,
 **Answer.** Score range 0–12. Grades: S `[10,12]`, A `[8,10)`, B `[6,8)`, C `[4,6)`,
 D `[0,4)`. Cutoffs live in configuration and are applied to the internal deterministic score
 before presentation rounding. Evaluation status is `EVALUATED` or `NOT_EVALUABLE`;
-`NOT_EVALUABLE` is distinct from Grade D and receives no score and no signal. A signal engine
-(`STRONG_BET`, `LEAN`, `PASS`, `AVOID`) resolves in strict priority order. (MODEL_SPEC §13–15.)
+`NOT_EVALUABLE` is distinct from Grade D and receives no score. (MODEL_SPEC §13–15.)
+
+**Superseded in part (GM-041).** The v6.3 signal engine named here was removed entirely by
+Product Owner ruling; the engine's output is Total Score, Tier, Component Breakdown, Audit
+Trail, Warnings, and Fallbacks. See MODEL_SPEC §16 and Q27.
 
 ---
 
@@ -75,7 +78,7 @@ before presentation rounding. Evaluation status is `EVALUATED` or `NOT_EVALUABLE
 | **Tickets affected** | GM-002, GM-006 |
 
 **Answer.** **Advisory only.** It awards no points, removes no points, caps no grade, vetoes no
-evaluable result, changes no signal, and reweights no category. It sits beside the scored
+evaluable result, and reweights no category. It sits beside the scored
 result as structured, auditable findings. Free-text bullpen notes must never become hidden
 numerical scoring. (MODEL_SPEC §10.)
 
@@ -175,17 +178,20 @@ exactly 3, so "strong" collapsed to "perfect".
 **Answer.** **Fractional points are allowed and expected**, which dissolves the problem. The
 strong-category rule is unchanged: `category_score >= category_max_points × 0.75`. A 3-point
 category is strong at **2.25 or above**; a 2-point category at **1.50 or above**. No rounding
-occurs before bucket qualification, category aggregation, total aggregation, grade assignment,
-strong-category comparison, or signal assignment. Presentation rounding is separate and never
-affects model behavior. This is what makes the Decimal policy mandatory rather than tidy — see
-ADR-0002. (MODEL_SPEC §3.1, §16.)
+occurs before bucket qualification, category aggregation, total aggregation, or grade
+assignment. Presentation rounding is separate and never affects model behavior. This is what
+makes the Decimal policy mandatory rather than tidy — see ADR-0002. (MODEL_SPEC §3.1.)
+
+**Superseded in part (GM-041).** The strong-category rule this question concerned existed only
+to feed the signal engine and was removed with it. The fractional-points ruling stands and is
+load-bearing for the engine's exact-Decimal arithmetic.
 
 ---
 
-### Q27 — `AVOID` precedence over `STRONG_BET`
+### Q27 — `AVOID` precedence over `STRONG_BET` (SUPERSEDED by the GM-041 ruling)
 | | |
 |---|---|
-| **Status** | CLOSED |
+| **Status** | SUPERSEDED |
 | **Owner** | PO |
 | **Decision date** | 2026-07-22 (v6.3) |
 | **Tickets affected** | GM-003, GM-006 |
@@ -193,12 +199,16 @@ ADR-0002. (MODEL_SPEC §3.1, §16.)
 **Raised by** engineering: a reachable line (Power Profile 1, all else maximal) yields Grade S
 with signal `AVOID`.
 
-**Answer.** **The priority is intentional.** `AVOID` → `STRONG_BET` → `LEAN` → `PASS`, first
-match wins. A high total grade can still receive `AVOID` when Power Profile ≤ 1. The grade
-reports the total score; the signal applies the prioritized decision rules. The pairing must be
-presented with its **override reason**, e.g. `power_profile_veto`, in both the interface and the
-audit trail, so it never reads as a defect. Override reason codes belong in configuration.
-(MODEL_SPEC §16.1.)
+**Answer (2026-07-22, v6.3).** The priority was intentional: `AVOID` → `STRONG_BET` → `LEAN` →
+`PASS`, first match wins, with an override reason such as `power_profile_veto` shown in the
+interface and the audit trail.
+
+**SUPERSEDED 2026-07-25 (GM-041).** The Product Owner ruled that GreenMachine is an evaluation
+platform, not a betting advisor, and removed every betting classification from all scope. The
+question this closure answered no longer exists: there is no signal, no override reason, and no
+priority order to resolve. The engine's output is Total Score, Tier, Component Breakdown, Audit
+Trail, Warnings, and Fallbacks. GreenMachine separates evaluation from decision-making — any
+wagering, fantasy, or DFS decision belongs entirely to the user. (MODEL_SPEC §16.)
 
 ---
 
@@ -528,6 +538,5 @@ been closed by specification v6.3; they are retained in the Closed section above
 | **Owner** | PO |
 | **Tickets affected** | future presentation tickets |
 
-What exactly produces "Strong / Moderate / Weak" agreement — grade distance, score distance, or
-signal concordance? Research context only; no scoring impact. Computed in `reporting` over two
+What exactly produces "Strong / Moderate / Weak" agreement — grade distance or score distance? Research context only; no scoring impact. Computed in `reporting` over two
 independently stored `GradeResult`s from two profile-specific snapshots, never inside the core.

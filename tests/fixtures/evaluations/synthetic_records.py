@@ -46,7 +46,6 @@ from greenmachine.domain import (
     SampleStatus,
     SampleType,
     Sha256Digest,
-    Signal,
     SourceCaptureId,
     UnavailableRequiredInput,
     ValidationFinding,
@@ -379,8 +378,6 @@ def evaluated_grade_result() -> EvaluatedGradeResult:
         ),
         total_score=Decimal("2.2"),
         grade=Grade.C,
-        signal=Signal.LEAN,
-        signal_reason="synthetic_lean_reason",
     )
 
 

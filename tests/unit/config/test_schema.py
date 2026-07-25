@@ -26,7 +26,6 @@ from greenmachine.domain import (
     MeasurementId,
     MissingReason,
     SampleType,
-    Signal,
     WindowProfile,
 )
 
@@ -61,7 +60,6 @@ def test_domain_enums_are_used_directly(config: GreenMachineConfig) -> None:
     assert {entry.category for entry in config.allocations.categories} == set(Category)
     assert {component.component_id for component in config.components} == set(ComponentId)
     assert {cutoff.grade for cutoff in config.allocations.grade_cutoffs} == set(Grade)
-    assert {rule.signal for rule in config.allocations.signal_rules} == set(Signal)
 
     component = config.components[0]
     assert isinstance(component.sample_type, SampleType)
@@ -139,7 +137,7 @@ def test_allocations_are_not_nested_under_a_profile(config: GreenMachineConfig) 
     fields = set(type(profile).model_fields)
 
     assert fields == {"window_profile", "minimum_sample_required", "scoring"}
-    assert not fields & {"max_points", "grade_cutoffs", "strong_category_fraction"}
+    assert not fields & {"max_points", "grade_cutoffs", "total_max_points"}
 
 
 # --------------------------------------------------------------------------
@@ -162,7 +160,6 @@ def test_every_sequence_is_a_tuple(config: GreenMachineConfig) -> None:
     assert isinstance(config.components, tuple)
     assert isinstance(config.allocations.categories, tuple)
     assert isinstance(config.allocations.categories[0].components, tuple)
-    assert isinstance(config.allocations.signal_rules[0].any_of, tuple)
     assert isinstance(config.components[0].missing_data.reasons, tuple)
 
 
@@ -175,7 +172,6 @@ def test_no_float_exists_anywhere_in_the_object_graph(config: GreenMachineConfig
 
 def test_every_scoring_numeric_is_a_decimal(config: GreenMachineConfig) -> None:
     assert isinstance(config.allocations.total_max_points, Decimal)
-    assert isinstance(config.allocations.strong_category_fraction, Decimal)
     assert isinstance(config.allocations.categories[0].max_points, Decimal)
     assert isinstance(config.allocations.grade_cutoffs[0].lower, Decimal)
     assert isinstance(config.components[0].max_points, Decimal)
@@ -185,7 +181,7 @@ def test_fractional_allocations_survive_exactly(config: GreenMachineConfig) -> N
     total = sum((entry.max_points for entry in config.allocations.categories), Decimal(0))
 
     assert total == Decimal("12")
-    assert config.allocations.strong_category_fraction == Decimal("0.62")
+    assert config.allocations.categories[0].max_points == Decimal("2.7")
 
 
 @pytest.mark.parametrize(

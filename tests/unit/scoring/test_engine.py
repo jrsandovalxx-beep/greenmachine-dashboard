@@ -29,7 +29,6 @@ from greenmachine.domain import (
     MeasurementId,
     MissingReason,
     NotEvaluableGradeResult,
-    Signal,
     ValidationInputId,
 )
 from greenmachine.evaluation import serialize_record
@@ -108,8 +107,6 @@ def test_a_full_snapshot_evaluates_with_exact_arithmetic(
     assert isinstance(result, EvaluatedGradeResult)
     assert result.total_score == Decimal("11.55")
     assert result.grade is Grade.S
-    assert result.signal is Signal.STRONG_BET
-    assert result.signal_reason == "signal_priority_2_strong_bet"
 
     by_category = {score.category: score.points_awarded for score in result.category_scores}
     assert by_category == {
@@ -137,8 +134,6 @@ def test_every_component_and_stage_appears_in_the_audit_derivation(
         "category_aggregation",
         "total_aggregation",
         "grade_assignment",
-        "strong_category_check",
-        "signal_assignment",
     ):
         assert expected_stage in stages, expected_stage
     sequences = [entry.sequence for entry in result.audit_derivation]
@@ -292,7 +287,7 @@ def test_an_insufficient_sample_is_scored_and_warned_exactly_once(
 
 
 # --------------------------------------------------------------------------
-# Grade cutoffs and signal rules
+# Grade cutoffs
 # --------------------------------------------------------------------------
 
 
@@ -333,10 +328,15 @@ def test_a_perfect_total_lands_in_the_inclusive_terminal_cutoff(
     assert result.grade is Grade.S
 
 
-def test_the_avoid_rule_overrides_a_high_grade_with_its_reason(
+def test_a_zeroed_category_still_grades_from_the_plain_arithmetic_total(
     config: GreenMachineConfig,
 ) -> None:
-    """Power Profile zeroed, everything else maxed: grade A, signal AVOID."""
+    """Power Profile zeroed, everything else at its default.
+
+    Under the v6.3 signal engine this line was the AVOID-override case. GM-041
+    removed betting classifications entirely, so the interesting property is now
+    simply that a zeroed category neither vetoes the result nor perturbs the sum.
+    """
     values = {
         ComponentId.EXIT_VELOCITY: "50",
         ComponentId.BARREL_PCT: "5",
@@ -345,12 +345,11 @@ def test_the_avoid_rule_overrides_a_high_grade_with_its_reason(
     result = score_snapshot(engine_snapshot(values=values), config)
     assert result.total_score == Decimal("9.2")
     assert result.grade is Grade.A
-    assert result.signal is Signal.AVOID
-    assert result.signal_reason == "synthetic_power_profile_veto"
 
 
-def test_signal_priority_is_first_match_wins(config: GreenMachineConfig) -> None:
-    """Grade B with two strong categories: STRONG_BET needs three, LEAN matches."""
+def test_a_mid_range_combination_grades_from_its_exact_total(
+    config: GreenMachineConfig,
+) -> None:
     values = dict(ZEROING_VALUES)
     values.update(
         {
@@ -366,17 +365,30 @@ def test_signal_priority_is_first_match_wins(config: GreenMachineConfig) -> None
     result = score_snapshot(engine_snapshot(values=values), config)
     assert result.total_score == Decimal("6.45")
     assert result.grade is Grade.B
-    assert result.signal is Signal.LEAN
-    assert result.signal_reason == "signal_priority_3_lean"
 
 
-def test_the_terminal_always_rule_is_the_fallback(config: GreenMachineConfig) -> None:
+def test_a_near_floor_combination_grades_d(config: GreenMachineConfig) -> None:
     values = dict(ZEROING_VALUES)
-    values[ComponentId.EXIT_VELOCITY] = "95"  # power 1.1 >= 0.9: AVOID does not fire
+    values[ComponentId.EXIT_VELOCITY] = "95"
     result = score_snapshot(engine_snapshot(values=values), config)
     assert result.grade is Grade.D
-    assert result.signal is Signal.PASS
-    assert result.signal_reason == "signal_priority_4_pass"
+
+
+def test_the_result_carries_no_betting_classification(
+    config: GreenMachineConfig,
+) -> None:
+    """GM-041: GreenMachine evaluates; it never advises.
+
+    The engine's entire output is Total Score, Tier, Component Breakdown, Audit
+    Trail, Warnings, and Fallbacks. No signal, signal reason, or equivalent may
+    reappear on the record or anywhere in its serialized bytes.
+    """
+    result = score_snapshot(engine_snapshot(), config)
+    for banned_attribute in ("signal", "signal_reason", "strong_categories"):
+        assert not hasattr(result, banned_attribute), banned_attribute
+    rendered = serialize_record(result).decode("utf-8")
+    for banned in ("STRONG_BET", "LEAN", "AVOID", "signal", "strong_category"):
+        assert banned not in rendered, banned
 
 
 # --------------------------------------------------------------------------

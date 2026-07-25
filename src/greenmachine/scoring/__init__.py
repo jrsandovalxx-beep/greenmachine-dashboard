@@ -1,4 +1,4 @@
-"""The grading core: bucket resolution, aggregation, grades, and signals.
+"""The grading core: bucket resolution, aggregation, and grades.
 
 Pure and deterministic (GM-041): a :class:`~greenmachine.domain.GradeResult`
 is a function of ``(frozen InputSnapshot, loaded GreenMachineConfig)`` and

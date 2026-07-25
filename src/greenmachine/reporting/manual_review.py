@@ -3,7 +3,7 @@
 This is explicitly **not** the GreenMachine scoring engine. The user assigns
 every category by hand; the module only enforces the allowed ranges, tracks
 completeness, sums arithmetic, derives the frozen tier, and produces
-deterministic exports. It generates no signal, no recommendation, and no
+deterministic exports. It generates no recommendation of any kind and no
 timestamp of its own — a timestamp appears in an export only when the user
 explicitly typed one.
 """

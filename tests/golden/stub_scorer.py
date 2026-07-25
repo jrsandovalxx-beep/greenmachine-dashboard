@@ -3,8 +3,8 @@
 This module exists so the golden harness can be proven end to end before the
 Sprint-2 scoring engine exists. It lives under ``tests/`` and must never enter
 ``src/``. It performs **no scoring of any kind**: no bucket resolution, no
-threshold comparison, no category aggregation, no grade derivation, no
-signal-rule evaluation, and it consults no configuration. It reads no clock, no
+threshold comparison, no category aggregation, no grade derivation, and it
+consults no configuration. It reads no clock, no
 filesystem, no network, no environment, and no randomness.
 
 What it does instead: it assembles a structurally valid, deliberately synthetic
@@ -14,7 +14,7 @@ no present observations, a
 supplied snapshot, using fixed constants selected **only** by
 :class:`~greenmachine.domain.WindowProfile` — solely to prove that the two
 profiles are genuinely separate execution paths. It never inspects a metric
-value to decide points, grade, or signal. Every number it emits is an obviously
+value to decide points or grade. Every number it emits is an obviously
 synthetic fixture value, never a production threshold.
 """
 
@@ -34,7 +34,6 @@ from greenmachine.domain import (
     InputSnapshot,
     NotEvaluableGradeResult,
     SampleStatus,
-    Signal,
     UnavailableRequiredInput,
     ValidationFinding,
     ValidationInputId,
@@ -53,8 +52,6 @@ class _StubProfileConstants:
     category_points: Decimal
     total_score: Decimal
     grade: Grade
-    signal: Signal
-    signal_reason: str
 
 
 # Two deliberately different constant sets prove RECENT_7D and LONG_TERM_2Y are
@@ -66,8 +63,6 @@ _PROFILE_CONSTANTS: dict[WindowProfile, _StubProfileConstants] = {
         category_points=Decimal("1.111"),
         total_score=Decimal("1.111"),
         grade=Grade.C,
-        signal=Signal.PASS,
-        signal_reason="synthetic_stub_recent_pass",
     ),
     WindowProfile.LONG_TERM_2Y: _StubProfileConstants(
         component_points=Decimal("0.222"),
@@ -75,14 +70,12 @@ _PROFILE_CONSTANTS: dict[WindowProfile, _StubProfileConstants] = {
         category_points=Decimal("2.222"),
         total_score=Decimal("2.222"),
         grade=Grade.B,
-        signal=Signal.LEAN,
-        signal_reason="synthetic_stub_long_term_lean",
     ),
 }
 
 _STUB_EXPLANATION = (
     "GM-008 test-only stub scorer: fixed synthetic values selected by window profile; "
-    "no bucket resolution, no aggregation, no grading or signal rules were executed"
+    "no bucket resolution, no aggregation, and no grading rules were executed"
 )
 
 
@@ -172,10 +165,7 @@ def _evaluated(
             stage="stub_result",
             rule_reference=config_version_identifier,
             input_summary=f"fixed synthetic total {constants.total_score}",
-            output_summary=(
-                f"grade {constants.grade.value}, signal {constants.signal.value} "
-                f"({constants.signal_reason})"
-            ),
+            output_summary=f"grade {constants.grade.value}",
             explanation=_STUB_EXPLANATION,
         ),
     )
@@ -189,8 +179,6 @@ def _evaluated(
         category_scores=category_scores,
         total_score=constants.total_score,
         grade=constants.grade,
-        signal=constants.signal,
-        signal_reason=constants.signal_reason,
     )
 
 

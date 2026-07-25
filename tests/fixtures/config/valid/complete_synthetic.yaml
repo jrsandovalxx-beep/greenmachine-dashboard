@@ -2,8 +2,8 @@
 #
 # Every number here was chosen to be obviously wrong for baseball so it can never
 # be mistaken for the approved model. The category split is 2.7/3.3/1.9/2.4/1.7
-# rather than the specified 3/3/2/2/2, the grade table is 3.3/5.1/7.7/9.4 rather
-# than 4/6/8/10, and the strong-category fraction is 0.62 rather than 0.75.
+# rather than the specified 3/3/2/2/2, and the grade table is 3.3/5.1/7.7/9.4
+# rather than 4/6/8/10.
 #
 # Engineering does not invent baseball thresholds (ENGINEERING_GUIDELINES §8).
 # The real allocations, buckets, and sample minimums are Product Owner decisions
@@ -11,7 +11,7 @@
 #
 # Covers: all 5 categories, all 11 components, both window profiles, both
 # attack-angle measurements, bucketed and binary scoring, fractional
-# allocations, all 4 signals, and an explicitly disabled fuzzy policy.
+# allocations, and an explicitly disabled fuzzy policy.
 
 schema_version: 1
 model_configuration_version: "synthetic-fixture-0"
@@ -21,7 +21,6 @@ fuzzy_scoring:
   enabled: false
 
 allocations:
-  strong_category_fraction: "0.62"
   total_max_points: "12"
 
   categories:
@@ -47,38 +46,6 @@ allocations:
     - { grade: B, lower: "5.1", upper: "7.7", terminal: false }
     - { grade: A, lower: "7.7", upper: "9.4", terminal: false }
     - { grade: S, lower: "9.4", upper: "12",  terminal: true }
-
-  signal_rules:
-    - priority: 1
-      signal: AVOID
-      override_reason: synthetic_power_veto
-      any_of:
-        - all_of:
-            - { type: grade_in, grades: [D] }
-        - all_of:
-            - { type: category_score, category: power_profile, operator: at_most, value: "1.15" }
-    - priority: 2
-      signal: STRONG_BET
-      any_of:
-        - all_of:
-            - { type: grade_in, grades: [S] }
-        - all_of:
-            - { type: grade_in, grades: [A] }
-            - { type: strong_category_count, operator: at_least, count: 3 }
-    - priority: 3
-      signal: LEAN
-      any_of:
-        - all_of:
-            - { type: grade_in, grades: [A] }
-        - all_of:
-            - { type: grade_in, grades: [B] }
-            - { type: total_score, operator: at_least, value: "6.85" }
-            - { type: strong_category_count, operator: at_least, count: 2 }
-    - priority: 4
-      signal: PASS
-      any_of:
-        - all_of:
-            - { type: always }
 
 components:
   - component_id: exit_velocity

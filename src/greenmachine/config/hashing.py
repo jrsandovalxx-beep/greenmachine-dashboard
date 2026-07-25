@@ -121,7 +121,7 @@ def config_hash(config: GreenMachineConfig) -> ConfigHash:
     :func:`~greenmachine.common.ids.content_digest`, which this reuses rather than
     reimplements. Unaffected by comments, indentation, key order, source newline
     style, or equivalent decimal spellings; changed by any behavior-affecting
-    field (a threshold, an allocation, a cutoff, a signal, a policy, a profile).
+    field (a threshold, an allocation, a cutoff, a policy, a profile).
     """
     return ConfigHash(content_digest(semantic_projection(config)))
 

@@ -41,9 +41,8 @@ key. Never rely on dict insertion order, set iteration, filesystem order, or que
   rounding **`ROUND_HALF_EVEN`**. Never mutate the global context.
 - Derived ratios and percentages are computed under that context and are **not quantized**
   before scoring.
-- **No rounding before** bucket qualification, category aggregation, total aggregation, grade
-  assignment, strong-category comparison, or signal assignment. Presentation rounding lives
-  outside the core and never feeds back.
+- **No rounding before** bucket qualification, category aggregation, total aggregation, or
+  grade assignment. Presentation rounding lives outside the core and never feeds back.
 - **No epsilon comparisons anywhere in the grading path.** A tolerance in a review is evidence
   that a float leaked in.
 - Canonical serialization emits Decimals as deterministic **base-10 strings**, never floats.
@@ -236,10 +235,9 @@ measurement. Display "Ideal Attack Angle %" or "Attack Angle Proxy" accordingly.
   - every category references only defined components, and every defined component is referenced
   - profile-specific bucket sets exist for every component declaring that profile, and
     measurement-specific bucket sets exist for every declared measurement
-  - signal rules reference defined grades, categories, thresholds, and override reason codes
   - all thresholds parse as Decimals from their configuration strings
 - **`config_hash` is semantic:** comments, formatting, indentation, and key order must not
-  change it; any threshold, allocation, cutoff, or signal change must
+  change it; any threshold, allocation, or cutoff change must
 - **Once a configuration version has produced an evaluation, it is immutable.** Fix forward with
   a new version.
 - **Every production configuration change requires:** a new model configuration version,
@@ -287,8 +285,7 @@ an implementation.
 Every golden case declares its `window_profile` and references one profile-specific snapshot.
 Coverage must include, at minimum: a `RECENT_7D` case and a `LONG_TERM_2Y` case from the **same
 source capture** (two snapshots sharing a `source_capture_id`), a `SampleStatus.INSUFFICIENT`
-case that is **still scored** and raises an advisory warning, a `NOT_EVALUABLE` case, one case
-per signal, a signal-override case (Grade S with `AVOID` and reason `power_profile_veto`), a
+case that is **still scored** and raises an advisory warning, a `NOT_EVALUABLE` case, a
 fractional-score case, one case per attack-angle measurement, and a grade-boundary case at each
 cutoff. Any change to scoring must appear as a golden diff, or the
 change is untested. Goldens are regenerated only by deliberately running the update script.
@@ -381,8 +378,8 @@ Four reasons to change, never conflated.
 - Averaging or blending window profiles; producing a hybrid grade
 - A single `InputSnapshot` carrying or producing two window profiles
 - Per-profile `max_points`, category maximums, or grade cutoffs
-- `Decimal(some_float)`; epsilon comparisons in the grading path; rounding before a bucket,
-  grade, strong-category, or signal comparison; serializing a score as a binary float
+- `Decimal(some_float)`; epsilon comparisons in the grading path; rounding before a bucket or
+  grade comparison; serializing a score as a binary float
 - Treating insufficient sample as missing, or putting `INSUFFICIENT` in `MissingReason`
 - Refusing to score a valid value because its sample is below the configured minimum
 - Treating missing data or insufficient sample as zero
