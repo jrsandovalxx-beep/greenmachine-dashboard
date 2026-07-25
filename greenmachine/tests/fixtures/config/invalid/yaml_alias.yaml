@@ -1,0 +1,5 @@
+# A YAML alias makes two parts of the tree share one object. Rejected outright.
+defaults: &shared
+  policy: not_evaluable
+first: *shared
+second: *shared

@@ -1,0 +1,448 @@
+# SYNTHETIC TEST FIXTURE — NOT A MODEL CONFIGURATION.
+#
+# Every number here was chosen to be obviously wrong for baseball so it can never
+# be mistaken for the approved model. The category split is 2.7/3.3/1.9/2.4/1.7
+# rather than the specified 3/3/2/2/2, the grade table is 3.3/5.1/7.7/9.4 rather
+# than 4/6/8/10, and the strong-category fraction is 0.62 rather than 0.75.
+#
+# Engineering does not invent baseball thresholds (ENGINEERING_GUIDELINES §8).
+# The real allocations, buckets, and sample minimums are Product Owner decisions
+# still open as Q11-Q18. This fixture exists only to exercise the loader.
+#
+# Covers: all 5 categories, all 11 components, both window profiles, both
+# attack-angle measurements, bucketed and binary scoring, fractional
+# allocations, all 4 signals, and an explicitly disabled fuzzy policy.
+
+schema_version: 1
+model_configuration_version: "synthetic-fixture-0"
+specification_version: "v6.3"
+
+fuzzy_scoring:
+  enabled: false
+
+allocations:
+  strong_category_fraction: "0.62"
+  total_max_points: "12"
+
+  categories:
+    - category: power_profile
+      max_points: "2.7"
+      components: [exit_velocity, barrel_pct, hard_hit_pct]
+    - category: pitcher_matchup
+      max_points: "3.3"
+      components: [pitch_mix_pressure, put_away_pitch_exploitation]
+    - category: form
+      max_points: "1.9"
+      components: [sweet_spot_pct, attack_angle_quality, bat_speed]
+    - category: pull_power
+      max_points: "2.4"
+      components: [pull_pct_air_balls]
+    - category: environment
+      max_points: "1.7"
+      components: [park, weather]
+
+  grade_cutoffs:
+    - { grade: D, lower: "0",   upper: "3.3", terminal: false }
+    - { grade: C, lower: "3.3", upper: "5.1", terminal: false }
+    - { grade: B, lower: "5.1", upper: "7.7", terminal: false }
+    - { grade: A, lower: "7.7", upper: "9.4", terminal: false }
+    - { grade: S, lower: "9.4", upper: "12",  terminal: true }
+
+  signal_rules:
+    - priority: 1
+      signal: AVOID
+      override_reason: synthetic_power_veto
+      any_of:
+        - all_of:
+            - { type: grade_in, grades: [D] }
+        - all_of:
+            - { type: category_score, category: power_profile, operator: at_most, value: "1.15" }
+    - priority: 2
+      signal: STRONG_BET
+      any_of:
+        - all_of:
+            - { type: grade_in, grades: [S] }
+        - all_of:
+            - { type: grade_in, grades: [A] }
+            - { type: strong_category_count, operator: at_least, count: 3 }
+    - priority: 3
+      signal: LEAN
+      any_of:
+        - all_of:
+            - { type: grade_in, grades: [A] }
+        - all_of:
+            - { type: grade_in, grades: [B] }
+            - { type: total_score, operator: at_least, value: "6.85" }
+            - { type: strong_category_count, operator: at_least, count: 2 }
+    - priority: 4
+      signal: PASS
+      any_of:
+        - all_of:
+            - { type: always }
+
+components:
+  - component_id: exit_velocity
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.9"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: not_evaluable
+      reasons: [NO_EVENTS_IN_WINDOW, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "125"
+            buckets:
+              - { lower: "0",    upper: "62.4", points: "0" }
+              - { lower: "62.4", upper: "88.1", points: "0.4" }
+              - { lower: "88.1", upper: "125",  points: "0.9" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "125"
+            buckets:
+              - { lower: "0",    upper: "59.7", points: "0" }
+              - { lower: "59.7", upper: "84.6", points: "0.4" }
+              - { lower: "84.6", upper: "125",  points: "0.9" }
+
+  - component_id: barrel_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1.1"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: not_evaluable
+      reasons: [NO_EVENTS_IN_WINDOW]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "17.3", points: "0" }
+              - { lower: "17.3", upper: "41.9", points: "0.5" }
+              - { lower: "41.9", upper: "100",  points: "1.1" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "15.8", points: "0" }
+              - { lower: "15.8", upper: "38.2", points: "0.5" }
+              - { lower: "38.2", upper: "100",  points: "1.1" }
+
+  - component_id: hard_hit_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.7"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: not_evaluable
+      reasons: [NO_EVENTS_IN_WINDOW]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "23.6", points: "0" }
+              - { lower: "23.6", upper: "51.4", points: "0.3" }
+              - { lower: "51.4", upper: "100",  points: "0.7" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "21.9", points: "0" }
+              - { lower: "21.9", upper: "48.7", points: "0.3" }
+              - { lower: "48.7", upper: "100",  points: "0.7" }
+
+  - component_id: pitch_mix_pressure
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "1.4"
+    sample_type: pitches
+    missing_data:
+      policy: not_evaluable
+      reasons: [EXPECTED_PITCHER_UNKNOWN, SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 7
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "28.4", points: "0" }
+              - { lower: "28.4", upper: "63.1", points: "0.6" }
+              - { lower: "63.1", upper: "100",  points: "1.4" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 7
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "28.4", points: "0" }
+              - { lower: "28.4", upper: "63.1", points: "0.6" }
+              - { lower: "63.1", upper: "100",  points: "1.4" }
+
+  # Declared lower_is_better purely to exercise the descending-monotonicity
+  # branch. The real direction for this component is an open question (Q16).
+  - component_id: put_away_pitch_exploitation
+    scoring_method: bucketed
+    direction: lower_is_better
+    max_points: "1.9"
+    sample_type: pitches
+    missing_data:
+      policy: record_missing
+      reasons: [EXPECTED_PITCHER_UNKNOWN]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 7
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "19.2", points: "1.9" }
+              - { lower: "19.2", upper: "44.6", points: "0.8" }
+              - { lower: "44.6", upper: "100",  points: "0" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 7
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "19.2", points: "1.9" }
+              - { lower: "19.2", upper: "44.6", points: "0.8" }
+              - { lower: "44.6", upper: "100",  points: "0" }
+
+  - component_id: sweet_spot_pct
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.6"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: not_evaluable
+      reasons: [NO_EVENTS_IN_WINDOW]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "26.7", points: "0" }
+              - { lower: "26.7", upper: "55.3", points: "0.25" }
+              - { lower: "55.3", upper: "100",  points: "0.6" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "24.1", points: "0" }
+              - { lower: "24.1", upper: "52.8", points: "0.25" }
+              - { lower: "52.8", upper: "100",  points: "0.6" }
+
+  # The only component with two mutually exclusive measurements (MODEL_SPEC
+  # §9.1). Each profile configures a distinct bucket set for each, and neither
+  # may substitute for the other.
+  - component_id: attack_angle_quality
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.8"
+    sample_type: batted_ball_events
+    missing_data:
+      policy: not_evaluable
+      reasons: [TRACKING_UNAVAILABLE, UNSUPPORTED_HISTORICAL_PERIOD]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            measurement_id: ideal_attack_angle_pct
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "31.4", points: "0" }
+              - { lower: "31.4", upper: "58.9", points: "0.35" }
+              - { lower: "58.9", upper: "100",  points: "0.8" }
+          - method: bucketed
+            measurement_id: attack_angle_threshold_proxy
+            domain_min: "0"
+            domain_max: "60"
+            buckets:
+              - { lower: "0",    upper: "12.6", points: "0" }
+              - { lower: "12.6", upper: "33.7", points: "0.35" }
+              - { lower: "33.7", upper: "60",   points: "0.8" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            measurement_id: ideal_attack_angle_pct
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "29.8", points: "0" }
+              - { lower: "29.8", upper: "56.2", points: "0.35" }
+              - { lower: "56.2", upper: "100",  points: "0.8" }
+          - method: bucketed
+            measurement_id: attack_angle_threshold_proxy
+            domain_min: "0"
+            domain_max: "60"
+            buckets:
+              - { lower: "0",    upper: "11.4", points: "0" }
+              - { lower: "11.4", upper: "31.5", points: "0.35" }
+              - { lower: "31.5", upper: "60",   points: "0.8" }
+
+  - component_id: bat_speed
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.5"
+    sample_type: swings
+    missing_data:
+      policy: record_missing
+      reasons: [TRACKING_UNAVAILABLE, UNSUPPORTED_HISTORICAL_PERIOD]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 5
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "125"
+            buckets:
+              - { lower: "0",    upper: "54.3", points: "0" }
+              - { lower: "54.3", upper: "79.8", points: "0.2" }
+              - { lower: "79.8", upper: "125",  points: "0.5" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 13
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "125"
+            buckets:
+              - { lower: "0",    upper: "52.1", points: "0" }
+              - { lower: "52.1", upper: "77.4", points: "0.2" }
+              - { lower: "77.4", upper: "125",  points: "0.5" }
+
+  - component_id: pull_pct_air_balls
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "2.4"
+    sample_type: air_balls
+    missing_data:
+      policy: not_evaluable
+      reasons: [NO_EVENTS_IN_WINDOW]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 3
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "18.9", points: "0" }
+              - { lower: "18.9", upper: "46.3", points: "1.05" }
+              - { lower: "46.3", upper: "100",  points: "2.4" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 11
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "100"
+            buckets:
+              - { lower: "0",    upper: "17.2", points: "0" }
+              - { lower: "17.2", upper: "43.5", points: "1.05" }
+              - { lower: "43.5", upper: "100",  points: "2.4" }
+
+  # Profile-invariant in practice (rolling three years under both profiles), but
+  # still declared per profile so an audit never has to infer the bounds.
+  - component_id: park
+    scoring_method: bucketed
+    direction: higher_is_better
+    max_points: "0.9"
+    sample_type: games
+    missing_data:
+      policy: record_missing
+      reasons: [SOURCE_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "200"
+            buckets:
+              - { lower: "0",    upper: "87.6",  points: "0" }
+              - { lower: "87.6", upper: "112.3", points: "0.4" }
+              - { lower: "112.3", upper: "200",  points: "0.9" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 1
+        scoring:
+          - method: bucketed
+            domain_min: "0"
+            domain_max: "200"
+            buckets:
+              - { lower: "0",    upper: "87.6",  points: "0" }
+              - { lower: "87.6", upper: "112.3", points: "0.4" }
+              - { lower: "112.3", upper: "200",  points: "0.9" }
+
+  # The binary component. Declares a qualification predicate and its award, and
+  # no continuous domain or buckets at all (MODEL_SPEC §5).
+  - component_id: weather
+    scoring_method: binary
+    direction: higher_is_better
+    max_points: "0.8"
+    sample_type: games
+    missing_data:
+      policy: record_missing
+      reasons: [WEATHER_UNAVAILABLE]
+    applicable_profiles: [RECENT_7D, LONG_TERM_2Y]
+    profiles:
+      - window_profile: RECENT_7D
+        minimum_sample_required: 1
+        scoring:
+          - method: binary
+            qualified_points: "0.8"
+            predicate:
+              all_of:
+                - { input_name: synthetic_input_a, operator: at_least, value: "41.7" }
+                - { input_name: synthetic_input_b, operator: greater_than, value: "3.9" }
+      - window_profile: LONG_TERM_2Y
+        minimum_sample_required: 1
+        scoring:
+          - method: binary
+            qualified_points: "0.8"
+            predicate:
+              all_of:
+                - { input_name: synthetic_input_a, operator: at_least, value: "41.7" }
+                - { input_name: synthetic_input_b, operator: greater_than, value: "3.9" }
