@@ -32,8 +32,6 @@ _EVALUATED_ONLY_FIELDS = (
     "category_scores",
     "total_score",
     "grade",
-    "signal",
-    "signal_reason",
 )
 # Nothing that would make the result impure or hindsight-bearing (ADR-0004/0006).
 _FORBIDDEN_FIELDS = (
@@ -77,7 +75,7 @@ def test_an_evaluated_result_requires_every_evaluated_field() -> None:
         )
 
 
-def test_a_not_evaluable_result_has_no_score_grade_or_signal_fields() -> None:
+def test_a_not_evaluable_result_has_no_score_or_grade_fields() -> None:
     for field in _EVALUATED_ONLY_FIELDS:
         assert not hasattr(NOT_EVAL, field), f"NotEvaluable must not carry {field}"
 
@@ -143,11 +141,6 @@ def test_out_of_order_audit_entries_are_rejected() -> None:
     reversed_audit = tuple(reversed(EVALUATED.audit_derivation))
     with pytest.raises(DomainValidationError, match=r"strictly increase"):
         dataclasses.replace(EVALUATED, audit_derivation=reversed_audit)
-
-
-def test_a_non_stable_signal_reason_is_rejected() -> None:
-    with pytest.raises(DomainValidationError, match=r"stable code"):
-        dataclasses.replace(EVALUATED, signal_reason="Not A Stable Code")
 
 
 @pytest.mark.parametrize("field", _FORBIDDEN_FIELDS)

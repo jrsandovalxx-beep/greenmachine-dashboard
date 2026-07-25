@@ -33,7 +33,6 @@ from .enums import (
     ProviderId,
     SampleStatus,
     SampleType,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -103,7 +102,6 @@ __all__ = [
     "SampleStatus",
     "SampleType",
     "Sha256Digest",
-    "Signal",
     "SnapshotId",
     "SourceCaptureId",
     "UnavailableRequiredInput",

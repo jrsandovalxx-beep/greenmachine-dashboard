@@ -1,8 +1,9 @@
 """Regression tests for the GM-003 r2 correction pass.
 
-Three focused fixes: positional (not global-string) union-path normalization,
-``file_path`` validation at the ``load_config_text`` boundary, and a full-string
-override-reason check.
+Two surviving fixes: positional (not global-string) union-path normalization,
+and ``file_path`` validation at the ``load_config_text`` boundary. The
+full-string override-reason section was removed with the signal engine in
+GM-041.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from config_fixtures import mutate, valid_text
 from greenmachine.config import (
     ConfigParseError,
     ConfigSchemaError,
-    ConfigSemanticError,
     load_config_text,
 )
 
@@ -27,7 +27,7 @@ VALID_PATH = "tests/fixtures/config/valid/complete_synthetic.yaml"
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["always", "bucketed", "binary", "grade_in", "total_score"])
+@pytest.mark.parametrize("name", ["bucketed", "binary"])
 def test_a_real_root_key_named_after_a_discriminator_is_preserved(name: str) -> None:
     """A discriminator-named key at the root is a real key, not a synthetic tag."""
     text = mutate("schema_version: 1", f"schema_version: 1\n{name}: nope")
@@ -90,51 +90,6 @@ def test_a_real_key_equal_to_another_discriminator_survives_branch_removal() -> 
     assert key_path == ("components", "0", "profiles", "0", "scoring", "0", "binary")
 
 
-def test_the_synthetic_condition_branch_is_removed() -> None:
-    text = mutate(
-        "            - { type: grade_in, grades: [S] }",
-        "            - { type: grade_in, grades: [S], mystery: 1 }",
-    )
-
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    key_path = caught.value.context.key_path
-    assert "grade_in" not in key_path
-    assert key_path[-1] == "mystery"
-    assert key_path[:3] == ("allocations", "signal_rules", "1")
-
-
-def test_a_condition_real_key_equal_to_another_discriminator_survives() -> None:
-    """type: grade_in + a real key named 'always' -> keep only the real one."""
-    text = mutate(
-        "            - { type: grade_in, grades: [S] }",
-        "            - { type: grade_in, grades: [S], always: unexpected }",
-    )
-
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    key_path = caught.value.context.key_path
-    assert key_path[-1] == "always"
-    assert key_path[-2] == "0"
-    assert key_path[-3] == "all_of"
-
-
-def test_branch_removal_does_not_depend_on_a_global_string_filter() -> None:
-    """A discriminator-named key at any non-union position is never stripped."""
-    # 'total_score' as an unknown key on a signal rule (not inside all_of).
-    text = mutate(
-        "      signal: PASS",
-        "      signal: PASS\n      total_score: nope",
-    )
-
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    assert caught.value.context.key_path[-1] == "total_score"
-
-
 # --------------------------------------------------------------------------
 # 2. load_config_text file_path validation
 # --------------------------------------------------------------------------
@@ -192,56 +147,3 @@ def test_the_default_file_path_is_none() -> None:
     config = load_config_text(valid_text())
 
     assert len(config.components) == 11
-
-
-# --------------------------------------------------------------------------
-# 3. Full-string override-reason match
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "reason",
-    [
-        "synthetic_power_veto\n",
-        "synthetic_power_veto\r",
-        "synthetic_power_veto\t",
-        "synthetic_power_veto ",
-        " synthetic_power_veto",
-        "UPPER_CASE",
-        "not-stable",
-        "not.stable",
-    ],
-)
-def test_an_override_reason_that_does_not_fully_match_is_rejected(reason: str) -> None:
-    """A trailing newline no longer slips past the `$` anchor."""
-    old = "      override_reason: synthetic_power_veto"
-    text = mutate(old, f"      override_reason: {reason!r}")
-
-    with pytest.raises(ConfigSemanticError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    assert "stable identifier" in str(caught.value)
-    assert caught.value.context.key_path == (
-        "allocations",
-        "signal_rules",
-        "0",
-        "override_reason",
-    )
-
-
-def test_an_empty_override_reason_is_rejected() -> None:
-    text = mutate("      override_reason: synthetic_power_veto", '      override_reason: ""')
-
-    with pytest.raises(ConfigSemanticError, match=r"stable identifier"):
-        load_config_text(text, file_path="x.yaml")
-
-
-@pytest.mark.parametrize(
-    "reason", ["power_profile_veto", "synthetic_power_veto", "sample_override_2", "a"]
-)
-def test_a_valid_stable_code_is_accepted(reason: str) -> None:
-    text = mutate("      override_reason: synthetic_power_veto", f"      override_reason: {reason}")
-
-    config = load_config_text(text)
-
-    assert config.allocations.signal_rules[0].override_reason == reason

@@ -21,7 +21,6 @@ from greenmachine.domain import (
     NotEvaluableGradeResult,
     SampleStatus,
     SampleType,
-    Signal,
     ValidationInputId,
     WindowProfile,
 )
@@ -48,8 +47,6 @@ def test_profiles_produce_distinct_results() -> None:
     assert long_term.window_profile is WindowProfile.LONG_TERM_2Y
     assert recent.total_score != long_term.total_score
     assert recent.grade is not long_term.grade
-    assert recent.signal is not long_term.signal
-    assert recent.signal_reason != long_term.signal_reason
     assert serialize_record(recent) != serialize_record(long_term)
 
 
@@ -257,13 +254,12 @@ def test_config_version_is_used_only_as_an_audit_reference() -> None:
     assert isinstance(second, EvaluatedGradeResult)
     assert first.total_score == second.total_score
     assert first.grade is second.grade
-    assert first.signal is second.signal
     assert first.component_scores == second.component_scores
     assert {e.rule_reference for e in second.audit_derivation} == {"synthetic-fixture-other"}
 
 
 def test_metric_values_do_not_influence_the_stub() -> None:
-    """Different raw values, same structure: identical points, grade, signal."""
+    """Different raw values, same structure: identical points and grade."""
     baseline = synthetic_records.input_snapshot()
     alternate_exit = synthetic_records.metric_observation(
         ComponentId.EXIT_VELOCITY,
@@ -303,7 +299,6 @@ def test_metric_values_do_not_influence_the_stub() -> None:
     assert isinstance(second, EvaluatedGradeResult)
     assert first.total_score == second.total_score
     assert first.grade is second.grade
-    assert first.signal is second.signal
     assert [s.points_awarded for s in first.component_scores] == [
         s.points_awarded for s in second.component_scores
     ]
@@ -314,8 +309,6 @@ def test_stub_values_are_visibly_synthetic() -> None:
     assert isinstance(recent, EvaluatedGradeResult)
     assert recent.total_score == Decimal("1.111")
     assert recent.grade is Grade.C
-    assert recent.signal is Signal.PASS
-    assert recent.signal_reason == "synthetic_stub_recent_pass"
 
 
 def test_snapshot_without_present_observations_becomes_not_evaluable() -> None:
@@ -333,7 +326,6 @@ def test_snapshot_without_present_observations_becomes_not_evaluable() -> None:
         assert entry.missing_observation in snapshot.missing_observations
     assert not hasattr(result, "total_score")
     assert not hasattr(result, "grade")
-    assert not hasattr(result, "signal")
 
 
 def test_snapshot_with_no_observations_at_all_is_rejected() -> None:

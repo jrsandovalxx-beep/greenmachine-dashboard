@@ -27,7 +27,6 @@ __all__ = [
     "ProviderId",
     "SampleStatus",
     "SampleType",
-    "Signal",
     "ValidationInputId",
     "WindowProfile",
 ]
@@ -121,7 +120,7 @@ class ValidationInputId(Enum):
     """Advisory Validation Layer inputs (``GLOSSARY.md`` §2, ``MODEL_SPEC.md`` §17).
 
     Enumerated separately from :class:`ComponentId` because these award zero
-    points and can never influence the score, grade, or signal.
+    points and can never influence the score or the grade.
     """
 
     WOBA_WINDOW = "woba_window"
@@ -219,24 +218,6 @@ class Grade(Enum):
     B = "B"
     C = "C"
     D = "D"
-
-
-class Signal(Enum):
-    """Betting signal resolved in strict priority order (``MODEL_SPEC.md`` §16).
-
-    **Members are declared in evaluation-priority order: AVOID, STRONG_BET, LEAN,
-    PASS.** ``AVOID`` is evaluated first and the first match wins, so a high grade
-    can still resolve to ``AVOID`` with an override reason (§16.1, Q27). Declaring
-    them in any other order invites a reader to infer the wrong precedence.
-
-    Declaration order is vocabulary, not behaviour: signal resolution itself is
-    Sprint 2.
-    """
-
-    AVOID = "AVOID"
-    STRONG_BET = "STRONG_BET"
-    LEAN = "LEAN"
-    PASS = "PASS"
 
 
 class CoverageStatus(Enum):

@@ -43,7 +43,7 @@ Implementing both with one helper would silently corrupt one of them.
 - Derived ratios and percentages are computed under that declared context.
 - Derived values are **not quantized** before scoring.
 - **No rounding occurs before** bucket qualification, category aggregation, total aggregation,
-  grade assignment, strong-category comparison, or signal assignment.
+  grade assignment.
 - **Presentation rounding happens outside the grading core** and never feeds back into it.
 - **Canonical serialization emits Decimals as deterministic base-10 strings**, never binary
   floats. A round trip through JSON must not change a value.

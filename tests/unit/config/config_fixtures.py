@@ -61,7 +61,6 @@ def drop_line(containing: str) -> str:
 # as a string literal.
 FUZZY_DISABLED = "  enabled: false"
 TOTAL_MAX = '  total_max_points: "12"'
-STRONG_FRACTION = '  strong_category_fraction: "0.62"'
 POWER_CATEGORY = """    - category: power_profile
       max_points: "2.7"
       components: [exit_velocity, barrel_pct, hard_hit_pct]"""
@@ -106,16 +105,6 @@ WEATHER_BINARY = """          - method: binary
               all_of:
                 - { input_name: synthetic_input_a, operator: at_least, value: "41.7" }
                 - { input_name: synthetic_input_b, operator: greater_than, value: "3.9" }"""
-
-AVOID_RULE = """    - priority: 1
-      signal: AVOID
-      override_reason: synthetic_power_veto"""
-
-PASS_RULE = """    - priority: 4
-      signal: PASS
-      any_of:
-        - all_of:
-            - { type: always }"""
 
 ENVIRONMENT_CATEGORY = """    - category: environment
       max_points: "1.7"

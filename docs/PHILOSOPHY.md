@@ -33,6 +33,28 @@ edges through fully explainable rules**.
 
 AI assists software engineering. AI never participates in runtime grading.
 
+### 1.1 Evaluation is separate from decision-making (permanent, binding)
+
+> **GreenMachine intentionally separates evaluation from decision-making.**
+>
+> The platform's responsibility ends after producing a transparent, deterministic, auditable
+> evaluation. Any wagering, fantasy, DFS, or other downstream decision belongs entirely to the
+> user and is outside the scope of GreenMachine.
+
+This is a permanent product principle, not a phase. It has concrete consequences that no future
+ticket may reverse:
+
+- The grading engine's output is exactly and only **Total Score, Tier, Component Breakdown,
+  Audit Trail, Warnings, and Fallbacks**.
+- No betting classification may exist in any form — no signal, signal reason, strong bet, lean,
+  pass, avoid, betting recommendation, recommendation engine, or equivalent. Specification v6.3
+  defined such an engine; GM-041 removed it in full by Product Owner ruling.
+- Wording discipline applies everywhere — interface, exports, reports, and documentation
+  describe data and derivations, never advice.
+
+Historical notes explaining the removal are permitted. Production implementation references
+are not.
+
 ---
 
 ## 2. The problem we are solving
@@ -60,8 +82,7 @@ floating-point drift.
 ### 3.2 Explainability
 A grade is not a number. It is a number **plus the full derivation**: which metrics were used,
 over which window, from which sample, with what raw values, landing in which buckets, awarding
-what points, under which configuration, and which signal rule fired. Explanation is a
-first-class output artifact.
+what points, and under which configuration. Explanation is a first-class output artifact.
 
 ### 3.3 Reproducibility
 Any historical evaluation can be re-derived exactly. This requires more than deterministic
@@ -80,7 +101,7 @@ recomputed in place, or silently migrated. Corrections are new records that supe
 and the supersession is itself part of the record.
 
 ### 3.6 Configuration governance
-Thresholds, bucket boundaries, allocations, cutoffs, and signal rules are **data**, not code.
+Thresholds, bucket boundaries, allocations, and cutoffs are **data**, not code.
 But configuration is **part of the model**, not a scratchpad. Changing a threshold must not
 require changing Python — and must still require a new model configuration version, Product
 Owner approval, strict schema and semantic validation, golden-test review, historical
@@ -120,7 +141,7 @@ The same snapshot may produce one grade under each profile. The dashboard will e
 the user toggle and compare side by side.
 
 **Window agreement** — whether the two views concur — is research context only. It is not a
-scored category, a point adjustment, a signal modifier, or a veto. Whether agreement carries
+scored category, a point adjustment, or a veto. Whether agreement carries
 signal is exactly the kind of question the platform exists to answer empirically, and it will
 be answered by backtesting, not by assumption.
 

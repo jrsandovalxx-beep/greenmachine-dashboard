@@ -1,12 +1,14 @@
 """Regression tests for the GM-003 r3 correction pass.
 
 One fix: the union-path normalizer identifies a discriminated union by its full
-schema **position**, not by the immediate field name. ``all_of`` names a
-discriminated ``SignalCondition`` union under a signal rule, but a plain
-``PredicateComparison`` list under a binary component's qualification predicate.
-A real key named after a discriminator (``grade_in``, ``always``, ...) inside a
-binary predicate's ``all_of``/``any_of`` must therefore survive, while the
-genuine synthetic branch tag of the two real unions is still removed.
+schema **position**, not by the immediate field name. A real key named after a
+discriminator inside a binary predicate's ``all_of``/``any_of`` must survive,
+while the genuine synthetic branch tag of a real union is still removed.
+
+GM-041 removed the signal-condition union, so the tags below are no longer union
+discriminators anywhere in the schema. They are retained deliberately as
+adversarial key names: a name-only normalizer would still be wrong to strip
+them, and this suite proves position-based matching does not.
 """
 
 from __future__ import annotations
@@ -34,15 +36,15 @@ _PREDICATE_ITEM = (
     '                - { input_name: synthetic_input_a, operator: at_least, value: "41.7" }'
 )
 
-# Every discriminator value of the SignalCondition union. Each is a valid key
-# name for the *signal* union but an unknown key for a PredicateComparison, so it
-# is exactly the shape that would trip a name-only normalizer.
+# Names that a name-only normalizer might strip. None is a union discriminator
+# after GM-041; each is an unknown key for a PredicateComparison, which is
+# exactly the shape that would trip a name-only normalizer.
 SIGNAL_TAGS = ["grade_in", "total_score", "category_score", "strong_category_count", "always"]
 
 
 def _binary_predicate_with_extra(clause: str, name: str) -> str:
     """Fixture whose weather RECENT_7D predicate's first item carries a real key
-    named after a signal-condition discriminator plus a matching ``type`` field.
+    named after a former signal-condition discriminator plus a ``type`` field.
 
     The ``type`` field is what makes the pre-r3 false positive fire: the old
     normalizer removed the segment when the document object carried
@@ -110,60 +112,6 @@ def test_a_binary_predicate_any_of_preserves_a_discriminator_named_key(name: str
         "any_of",
         "0",
         name,
-    )
-
-
-# --------------------------------------------------------------------------
-# D. The genuine signal-condition branch tag is still removed
-# --------------------------------------------------------------------------
-
-
-def test_the_signal_condition_branch_tag_is_still_removed() -> None:
-    text = mutate(
-        "            - { type: grade_in, grades: [S] }",
-        "            - { type: grade_in, grades: [S], mystery: 1 }",
-    )
-
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    key_path = caught.value.context.key_path
-    assert "grade_in" not in key_path
-    assert key_path == (
-        "allocations",
-        "signal_rules",
-        "1",
-        "any_of",
-        "0",
-        "all_of",
-        "0",
-        "mystery",
-    )
-
-
-# --------------------------------------------------------------------------
-# E. A real key after the genuine signal branch is preserved
-# --------------------------------------------------------------------------
-
-
-def test_a_real_key_after_the_signal_branch_is_preserved() -> None:
-    text = mutate(
-        "            - { type: grade_in, grades: [S] }",
-        "            - { type: grade_in, grades: [S], always: unexpected }",
-    )
-
-    with pytest.raises(ConfigSchemaError) as caught:
-        load_config_text(text, file_path="x.yaml")
-
-    assert caught.value.context.key_path == (
-        "allocations",
-        "signal_rules",
-        "1",
-        "any_of",
-        "0",
-        "all_of",
-        "0",
-        "always",
     )
 
 

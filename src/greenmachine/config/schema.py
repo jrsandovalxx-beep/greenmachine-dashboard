@@ -14,12 +14,11 @@ Three rules shape the whole schema:
   rejected rather than coerced. Counts are strict integers, and ``bool`` is not
   an integer here.
 * **Allocations are profile-invariant.** Category maximums, component
-  ``max_points``, grade cutoffs, the strong-category fraction, and signal rules
-  live in one shared structure. Nothing under a ``WindowProfile`` can restate
-  them, because those models forbid the keys entirely.
+  ``max_points``, and grade cutoffs live in one shared structure. Nothing under
+  a ``WindowProfile`` can restate them, because those models forbid the keys
+  entirely.
 
-This module defines structure only. It resolves no bucket, grades nothing, and
-evaluates no signal.
+This module defines structure only. It resolves no bucket and grades nothing.
 """
 
 from __future__ import annotations
@@ -38,7 +37,6 @@ from greenmachine.domain import (
     MeasurementId,
     MissingReason,
     SampleType,
-    Signal,
     WindowProfile,
 )
 
@@ -60,9 +58,6 @@ __all__ = [
     "PredicateComparison",
     "QualificationPredicate",
     "ScoringMethod",
-    "SignalClause",
-    "SignalCondition",
-    "SignalRule",
 ]
 
 
@@ -239,90 +234,21 @@ class GradeCutoff(_Frozen):
     terminal: StrictBool
 
 
-class SignalCondition(_Frozen):
-    """One typed, declarative condition. Never executed here."""
-
-
-class GradeInCondition(SignalCondition):
-    """True when the grade is one of the listed grades."""
-
-    type: Literal["grade_in"]
-    grades: tuple[Grade, ...] = Field(min_length=1)
-
-
-class TotalScoreCondition(SignalCondition):
-    """True when the total score compares as stated against ``value``."""
-
-    type: Literal["total_score"]
-    operator: ComparisonOperator
-    value: ConfigDecimal
-
-
-class CategoryScoreCondition(SignalCondition):
-    """True when one category's score compares as stated against ``value``."""
-
-    type: Literal["category_score"]
-    category: Category
-    operator: ComparisonOperator
-    value: ConfigDecimal
-
-
-class StrongCategoryCountCondition(SignalCondition):
-    """True when the number of strong categories compares against ``count``."""
-
-    type: Literal["strong_category_count"]
-    operator: ComparisonOperator
-    count: CountInt
-
-
-class AlwaysCondition(SignalCondition):
-    """The fallback clause. Always true; only valid on the last rule."""
-
-    type: Literal["always"]
-
-
-AnySignalCondition = Annotated[
-    GradeInCondition
-    | TotalScoreCondition
-    | CategoryScoreCondition
-    | StrongCategoryCountCondition
-    | AlwaysCondition,
-    Field(discriminator="type"),
-]
-
-
-class SignalClause(_Frozen):
-    """One alternative: every condition in ``all_of`` must hold."""
-
-    all_of: tuple[AnySignalCondition, ...] = Field(min_length=1)
-
-
-class SignalRule(_Frozen):
-    """One prioritised rule. ``any_of`` holds the alternative clauses.
-
-    MODEL_SPEC §16 resolves rules in strict priority order and the first match
-    wins; this records the rule, and nothing here evaluates it.
-    """
-
-    priority: CountInt
-    signal: Signal
-    any_of: tuple[SignalClause, ...] = Field(min_length=1)
-    override_reason: str | None = None
-
-
 class AllocationConfig(_Frozen):
     """The one shared allocation structure (MODEL_SPEC §2.1).
 
     Everything here is profile-invariant by construction: no ``WindowProfile``
     appears anywhere beneath it, and the per-profile models forbid these keys,
     so a per-profile allocation cannot be expressed at all.
+
+    GM-041 removed the betting-classification rule family (``signal_rules`` and
+    its typed condition types) and the ``strong_category_fraction`` that existed
+    only to feed it. GreenMachine evaluates; it does not decide.
     """
 
-    strong_category_fraction: ConfigDecimal
     total_max_points: ConfigDecimal
     categories: tuple[CategoryAllocation, ...] = Field(min_length=1)
     grade_cutoffs: tuple[GradeCutoff, ...] = Field(min_length=1)
-    signal_rules: tuple[SignalRule, ...] = Field(min_length=1)
 
 
 # --------------------------------------------------------------------------

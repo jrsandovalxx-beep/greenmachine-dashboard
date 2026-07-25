@@ -123,7 +123,7 @@ def test_the_projection_excludes_the_version_label_and_keeps_everything_else() -
 def test_the_projection_carries_nested_behavior_values() -> None:
     projection = semantic_projection(load_config_text(VALID))
 
-    assert projection["allocations"]["strong_category_fraction"] is not None
+    assert projection["allocations"]["total_max_points"] is not None
     assert projection["components"][0]["profiles"][0]["scoring"][0]["buckets"]
 
 
@@ -254,19 +254,6 @@ def _grade_cutoff(data: dict) -> None:
     cutoffs[1]["lower"] = "3.4"  # C lower
 
 
-def _strong_category_fraction(data: dict) -> None:
-    data["allocations"]["strong_category_fraction"] = "0.63"
-
-
-def _signal_rule(data: dict) -> None:
-    # The AVOID rule's first clause: grade_in [D] -> grade_in [C].
-    data["allocations"]["signal_rules"][0]["any_of"][0]["all_of"][0]["grades"] = ["C"]
-
-
-def _override_reason(data: dict) -> None:
-    data["allocations"]["signal_rules"][0]["override_reason"] = "synthetic_power_veto_revised"
-
-
 def _minimum_sample(data: dict) -> None:
     _profile(_component(data, "exit_velocity"), "RECENT_7D")["minimum_sample_required"] = 4
 
@@ -310,9 +297,6 @@ CHANGE_FAMILIES: dict[str, Callable[[dict], None]] = {
     "component_allocation": _component_allocation,
     "category_maximum": _category_maximum,
     "grade_cutoff": _grade_cutoff,
-    "strong_category_fraction": _strong_category_fraction,
-    "signal_rule": _signal_rule,
-    "override_reason": _override_reason,
     "minimum_sample_requirement": _minimum_sample,
     "missing_data_policy": _missing_data_policy,
     "profile_applicability": _profile_applicability,

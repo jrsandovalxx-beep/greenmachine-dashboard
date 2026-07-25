@@ -76,7 +76,6 @@ from greenmachine.domain import (
     SampleStatus,
     SampleType,
     Sha256Digest,
-    Signal,
     SnapshotId,
     SourceCaptureId,
     UnavailableRequiredInput,
@@ -963,7 +962,7 @@ def _common_result_fields(data: dict[str, object], ctx: str) -> dict[str, object
 
 def _read_evaluated_result(data: dict[str, object], ctx: str) -> EvaluatedGradeResult:
     keys = _COMMON_RESULT_KEYS | frozenset(
-        {"component_scores", "category_scores", "total_score", "grade", "signal", "signal_reason"}
+        {"component_scores", "category_scores", "total_score", "grade"}
     )
     _reject_unknown(data, keys, ctx)
     common = _common_result_fields(data, ctx)
@@ -979,8 +978,6 @@ def _read_evaluated_result(data: dict[str, object], ctx: str) -> EvaluatedGradeR
         ),
         total_score=_decimal(_field(data, "total_score", ctx), f"{ctx}.total_score"),
         grade=_enum(Grade, _field(data, "grade", ctx), f"{ctx}.grade"),
-        signal=_enum(Signal, _field(data, "signal", ctx), f"{ctx}.signal"),
-        signal_reason=_str(_field(data, "signal_reason", ctx), f"{ctx}.signal_reason"),
     )
 
 
@@ -1002,7 +999,7 @@ def _read_not_evaluable_result(data: dict[str, object], ctx: str) -> NotEvaluabl
 
 def _read_grade_result(value: object, ctx: str) -> GradeResult:
     data = _mapping(value, ctx)
-    if any(key in data for key in ("grade", "total_score", "signal", "signal_reason")):
+    if any(key in data for key in ("grade", "total_score")):
         return _read_evaluated_result(data, ctx)
     if "unavailable_required_inputs" in data:
         return _read_not_evaluable_result(data, ctx)

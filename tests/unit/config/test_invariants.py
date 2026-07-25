@@ -17,7 +17,6 @@ from config_fixtures import (
     GRADE_C,
     GRADE_D,
     GRADE_S,
-    PASS_RULE,
     PROXY_DEFINITION,
     WEATHER_BINARY,
     mutate,
@@ -227,14 +226,6 @@ def test_a_retired_component_cannot_be_referenced() -> None:
         load_config_text(
             mutate("      components: [pull_pct_air_balls]", "      components: [whiff_rate]")
         )
-
-
-def test_an_out_of_range_strong_fraction_is_rejected() -> None:
-    error = reject(
-        mutate('  strong_category_fraction: "0.62"', '  strong_category_fraction: "1.4"')
-    )
-
-    assert "strong_category_fraction" in str(error)
 
 
 # --------------------------------------------------------------------------
@@ -481,127 +472,6 @@ def test_a_non_boolean_fuzzy_flag_is_refused() -> None:
 
 
 # --------------------------------------------------------------------------
-# Signal rules (invariant 17)
-# --------------------------------------------------------------------------
-
-
-def test_a_non_contiguous_priority_is_rejected() -> None:
-    error = reject(mutate("    - priority: 3", "    - priority: 9"))
-
-    assert "contiguous starting at 1" in str(error)
-
-
-def test_a_duplicate_priority_is_rejected() -> None:
-    error = reject(mutate("    - priority: 3", "    - priority: 2"))
-
-    assert "used more than once" in str(error)
-
-
-def test_the_approved_priority_order_is_enforced() -> None:
-    """AVOID must be evaluated first (MODEL_SPEC §16, Q27).
-
-    Swapping AVOID and PASS keeps the priorities unique and contiguous, so the
-    only rule left to fail is the order itself.
-    """
-    text = mutate(
-        "    - priority: 1\n      signal: AVOID", "    - priority: 4\n      signal: AVOID"
-    )
-    text = text.replace(
-        "    - priority: 4\n      signal: PASS", "    - priority: 1\n      signal: PASS", 1
-    )
-    error = reject(text)
-
-    assert "priority order must be" in str(error)
-
-
-def test_a_missing_signal_rule_is_rejected() -> None:
-    text = mutate(f"{PASS_RULE}\n", "")
-    error = reject(text)
-
-    assert "signal missing a rule" in str(error) or "contiguous" in str(error)
-
-
-def test_a_duplicate_signal_is_rejected() -> None:
-    error = reject(mutate("      signal: LEAN", "      signal: AVOID"))
-
-    assert "declared more than once" in str(error)
-
-
-def test_an_unknown_signal_is_refused_by_the_schema() -> None:
-    with pytest.raises(ConfigSchemaError):
-        load_config_text(mutate("      signal: LEAN", "      signal: MAYBE"))
-
-
-def test_a_category_threshold_outside_its_domain_is_rejected() -> None:
-    error = reject(
-        mutate(
-            '{ type: category_score, category: power_profile, operator: at_most, value: "1.15" }',
-            '{ type: category_score, category: power_profile, operator: at_most, value: "9.9" }',
-        )
-    )
-
-    assert "outside" in str(error)
-    assert error.context.key_path[-1] == "value"
-
-
-def test_a_total_threshold_outside_the_score_domain_is_rejected() -> None:
-    error = reject(
-        mutate(
-            '{ type: total_score, operator: at_least, value: "6.85" }',
-            '{ type: total_score, operator: at_least, value: "13.5" }',
-        )
-    )
-
-    assert "outside the score domain" in str(error)
-
-
-def test_a_strong_category_count_above_the_category_count_is_rejected() -> None:
-    error = reject(
-        mutate(
-            "{ type: strong_category_count, operator: at_least, count: 3 }",
-            "{ type: strong_category_count, operator: at_least, count: 9 }",
-        )
-    )
-
-    assert "exceeds the" in str(error)
-
-
-def test_a_blank_override_reason_is_rejected() -> None:
-    error = reject(
-        mutate("      override_reason: synthetic_power_veto", '      override_reason: "  "')
-    )
-
-    assert "override_reason" in str(error)
-
-
-def test_the_fallback_must_be_last() -> None:
-    text = mutate(
-        "            - { type: grade_in, grades: [S] }",
-        "            - { type: always }",
-    )
-    error = reject(text)
-
-    assert "only the final fallback rule may use the 'always' condition" in str(error)
-
-
-def test_the_last_rule_must_be_the_fallback() -> None:
-    text = mutate(
-        "            - { type: always }",
-        '            - { type: total_score, operator: at_least, value: "0" }',
-    )
-    error = reject(text)
-
-    assert "must be exactly one clause of one 'always' condition" in str(error)
-
-
-def test_an_unknown_condition_shape_is_refused() -> None:
-    with pytest.raises(ConfigSchemaError):
-        load_config_text(
-            mutate("            - { type: always }", "            - { type: phase_of_moon }")
-        )
-
-
-# --------------------------------------------------------------------------
 # Numeric policy
 # --------------------------------------------------------------------------
 
@@ -609,21 +479,13 @@ def test_an_unknown_condition_shape_is_refused() -> None:
 @pytest.mark.parametrize(
     ("label", "old", "new"),
     [
-        ("yaml float", '  strong_category_fraction: "0.62"', "  strong_category_fraction: 0.62"),
+        ("yaml float", '  total_max_points: "12"', "  total_max_points: 12.0"),
         ("yaml integer", '  total_max_points: "12"', "  total_max_points: 12"),
-        ("boolean", '  strong_category_fraction: "0.62"', "  strong_category_fraction: true"),
-        (
-            "malformed string",
-            '  strong_category_fraction: "0.62"',
-            '  strong_category_fraction: "abc"',
-        ),
-        ("NaN", '  strong_category_fraction: "0.62"', '  strong_category_fraction: "NaN"'),
-        (
-            "Infinity",
-            '  strong_category_fraction: "0.62"',
-            '  strong_category_fraction: "Infinity"',
-        ),
-        ("empty string", '  strong_category_fraction: "0.62"', '  strong_category_fraction: ""'),
+        ("boolean", '  total_max_points: "12"', "  total_max_points: true"),
+        ("malformed string", '  total_max_points: "12"', '  total_max_points: "abc"'),
+        ("NaN", '  total_max_points: "12"', '  total_max_points: "NaN"'),
+        ("Infinity", '  total_max_points: "12"', '  total_max_points: "Infinity"'),
+        ("empty string", '  total_max_points: "12"', '  total_max_points: ""'),
     ],
 )
 def test_scoring_numerics_must_be_quoted_decimal_strings(label: str, old: str, new: str) -> None:

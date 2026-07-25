@@ -362,14 +362,11 @@ unknown side → LHB pull direction. Switch hitter vs. LHP with unknown side →
 | **Category score** | Sum of component scores within a category. Never averaged, never rescaled. |
 | **Total score** | Sum of category scores. Range 0–12, in Decimal. |
 | **Grade** | S `[10,12]` · A `[8,10)` · B `[6,8)` · C `[4,6)` · D `[0,4)`. Assigned from the internal Decimal score, before any presentation rounding. Profile-invariant cutoffs. |
-| **Strong category** | `category_score >= category_max_points × 0.75`, compared in Decimal without rounding. 3-point category → strong at ≥ 2.25; 2-point category → strong at ≥ 1.50. |
-| **Signal** | `AVOID` \| `STRONG_BET` \| `LEAN` \| `PASS`, resolved in **that** strict priority order; first match wins. `AVOID` is evaluated **first** (MODEL_SPEC §16, Q27), which is why a high grade can still resolve to `AVOID` with an override reason. Earlier revisions of this glossary listed the members `STRONG_BET, LEAN, PASS, AVOID` and called that the priority order; that was an editorial error, corrected here to match MODEL_SPEC §16. The `Signal` enum is declared in this order. |
-| **Signal override** | A case where a higher-priority rule supersedes what the grade alone would suggest — e.g. Grade S with `AVOID` and reason `power_profile_veto`. The reason code is displayed and audited. |
 | **Evaluation status** | `EVALUATED` \| `NOT_EVALUABLE` |
-| **`NOT_EVALUABLE`** | Required data unavailable after all approved component-specific fallbacks. Not a D grade, no manufactured score, no signal, with a recorded failure audit. |
+| **`NOT_EVALUABLE`** | Required data unavailable after all approved component-specific fallbacks. Not a D grade and no manufactured score, with a recorded failure audit. |
 | **Bucket** | A half-open `[lower, upper)` interval over a component's declared domain, awarding fixed points. Terminal bucket closed at the domain maximum. |
 | **Highest qualifying bucket** | Among buckets containing the value, the one awarding the most points — the awarded value |
-| **Presentation rounding** | Rounding applied only for display, outside the grading core. Never affects bucket, grade, strong-category, or signal decisions. |
+| **Presentation rounding** | Rounding applied only for display, outside the grading core. Never affects bucket or grade decisions. |
 
 ---
 
@@ -407,9 +404,8 @@ unknown side → LHB pull direction. Switch hitter vs. LHP with unknown side →
 
 ## 10. Domain enum vocabulary
 
-The complete enumerated vocabulary of the domain layer, listed **in declaration order**. For
-`Signal` that order is also the evaluation priority order (MODEL_SPEC §16); for the others it is
-simply the order the members are declared in.
+The complete enumerated vocabulary of the domain layer, listed **in declaration order**, which
+is simply the order the members are declared in.
 
 This section is the machine-checked source of truth for the drift test: it compares the block
 below against the code exactly — every enum, every member, in order — so an identifier can never
@@ -433,7 +429,6 @@ be added, renamed, reordered, or removed on one side only. Definitions of what e
 | `PitcherRole` | `opener`, `expected_starter`, `uncertain` |
 | `EvaluationStatus` | `EVALUATED`, `NOT_EVALUABLE` |
 | `Grade` | `S`, `A`, `B`, `C`, `D` |
-| `Signal` | `AVOID`, `STRONG_BET`, `LEAN`, `PASS` |
 | `CoverageStatus` | `COMPLETE`, `PARTIAL`, `NONE` |
 
 <!-- END DOMAIN VOCABULARY -->
