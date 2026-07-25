@@ -34,6 +34,7 @@ Execution follows ``MODEL_SPEC.md``:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -162,9 +163,7 @@ def _missing_for_component(
     return matches[0] if matches else None
 
 
-def _profile_config(
-    component: ComponentConfig, snapshot: InputSnapshot
-) -> ComponentProfileConfig:
+def _profile_config(component: ComponentConfig, snapshot: InputSnapshot) -> ComponentProfileConfig:
     for profile_config in component.profiles:
         if profile_config.window_profile is snapshot.window_profile:
             return profile_config
@@ -250,7 +249,7 @@ def _resolve_bucket(
 # Binary resolution (§5)
 # --------------------------------------------------------------------------
 
-_OPERATORS = {
+_OPERATORS: dict[str, Callable[[Decimal, Decimal], bool]] = {
     "at_least": lambda observed, value: observed >= value,
     "greater_than": lambda observed, value: observed > value,
     "at_most": lambda observed, value: observed <= value,
@@ -350,8 +349,7 @@ def _score_present(
                 f"{component.direction.value})"
             ),
             output_summary=(
-                f"bucket {bounds} awarded {_plain(points)} of "
-                f"{_plain(component.max_points)} points"
+                f"bucket {bounds} awarded {_plain(points)} of {_plain(component.max_points)} points"
             ),
             explanation=(
                 "highest qualifying half-open bucket wins; points are not cumulative "
@@ -372,8 +370,7 @@ def _score_present(
         stage="binary_qualification",
         rule_reference=reference,
         input_summary=(
-            f"observed {_plain(observation.raw_value)} {observation.unit}; "
-            f"predicate: {description}"
+            f"observed {_plain(observation.raw_value)} {observation.unit}; predicate: {description}"
         ),
         output_summary=(
             f"{'qualified' if holds else 'not qualified'}: awarded {_plain(points)} of "
@@ -494,9 +491,7 @@ def _category_scores(
             stage="category_aggregation",
             rule_reference=_rule_ref(config, "allocations", allocation.category.value),
             input_summary=f"component points: {rendered}",
-            output_summary=(
-                f"category total {_plain(total)} of {_plain(allocation.max_points)}"
-            ),
+            output_summary=(f"category total {_plain(total)} of {_plain(allocation.max_points)}"),
             explanation="plain exact-Decimal sum; no rounding, rescaling, or averaging "
             "(MODEL_SPEC §3)",
             category=allocation.category,
@@ -718,13 +713,9 @@ def score_snapshot(
                 rule_reference=_rule_ref(
                     config, "components", component.component_id.value, "applicable_profiles"
                 ),
-                input_summary=(
-                    f"profile '{snapshot.window_profile.value}' is not applicable"
-                ),
+                input_summary=(f"profile '{snapshot.window_profile.value}' is not applicable"),
                 output_summary="component skipped for this profile",
-                explanation=(
-                    "a component scores only under its configured applicable profiles"
-                ),
+                explanation=("a component scores only under its configured applicable profiles"),
                 component_id=component.component_id,
             )
             continue
@@ -758,8 +749,7 @@ def score_snapshot(
             stage="unscored_observations",
             rule_reference=_rule_ref(config, "components"),
             input_summary=(
-                f"present observation(s) with no configured component: "
-                f"{sorted(unconfigured)}"
+                f"present observation(s) with no configured component: {sorted(unconfigured)}"
             ),
             output_summary="left unscored; no configuration means no points",
             explanation=(
@@ -779,8 +769,7 @@ def score_snapshot(
             input_summary=f"required input(s) unavailable: {names}",
             output_summary="NOT_EVALUABLE (no score, grade, or signal exists)",
             explanation=(
-                "NOT_EVALUABLE is a distinct terminal state, never a low grade "
-                "(MODEL_SPEC §15)"
+                "NOT_EVALUABLE is a distinct terminal state, never a low grade (MODEL_SPEC §15)"
             ),
         )
         return NotEvaluableGradeResult(
@@ -793,9 +782,7 @@ def score_snapshot(
         )
 
     scores_by_component = {
-        outcome.component_id: outcome.score
-        for outcome in outcomes
-        if outcome.score is not None
+        outcome.component_id: outcome.score for outcome in outcomes if outcome.score is not None
     }
     category_scores = _category_scores(config, scores_by_component, audit)
 
@@ -806,12 +793,9 @@ def score_snapshot(
         stage="total_aggregation",
         rule_reference=_rule_ref(config, "allocations", "total_max_points"),
         input_summary=" + ".join(
-            f"{score.category.value}={_plain(score.points_awarded)}"
-            for score in category_scores
+            f"{score.category.value}={_plain(score.points_awarded)}" for score in category_scores
         ),
-        output_summary=(
-            f"total {_plain(total)} of {_plain(config.allocations.total_max_points)}"
-        ),
+        output_summary=(f"total {_plain(total)} of {_plain(config.allocations.total_max_points)}"),
         explanation="plain exact-Decimal sum of category totals (MODEL_SPEC §3)",
     )
 

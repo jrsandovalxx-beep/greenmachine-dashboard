@@ -3,7 +3,7 @@
 Every expected number below is derivable by hand from
 ``tests/fixtures/config/valid/gm041_engine_synthetic.yaml`` — deliberately
 wrong-for-baseball values that can never be mistaken for the approved model
-(Q11–Q16 remain open).
+(Q11-Q16 remain open).
 """
 
 from __future__ import annotations
@@ -14,7 +14,13 @@ from pathlib import Path
 import pytest
 from gm041_engine_snapshots import engine_snapshot
 
-from greenmachine.config import GreenMachineConfig, load_config, load_config_text
+from greenmachine.config import (
+    ConfigSemanticError,
+    FuzzyScoringPolicy,
+    GreenMachineConfig,
+    load_config,
+    load_config_text,
+)
 from greenmachine.domain import (
     Category,
     ComponentId,
@@ -35,8 +41,8 @@ from greenmachine.scoring import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIXTURE_PATH = REPO_ROOT / "tests" / "fixtures" / "config" / "valid" / (
-    "gm041_engine_synthetic.yaml"
+FIXTURE_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "config" / "valid" / ("gm041_engine_synthetic.yaml")
 )
 
 
@@ -147,9 +153,7 @@ def test_every_component_and_stage_appears_in_the_audit_derivation(
 def test_bucket_lower_bounds_are_inclusive_and_uppers_exclusive(
     config: GreenMachineConfig,
 ) -> None:
-    at_boundary = score_snapshot(
-        engine_snapshot(values={ComponentId.EXIT_VELOCITY: "90"}), config
-    )
+    at_boundary = score_snapshot(engine_snapshot(values={ComponentId.EXIT_VELOCITY: "90"}), config)
     assert _points(at_boundary, ComponentId.EXIT_VELOCITY) == Decimal("1.1")
 
     just_below = score_snapshot(
@@ -161,9 +165,7 @@ def test_bucket_lower_bounds_are_inclusive_and_uppers_exclusive(
 def test_the_terminal_bucket_is_closed_at_the_domain_maximum(
     config: GreenMachineConfig,
 ) -> None:
-    result = score_snapshot(
-        engine_snapshot(values={ComponentId.EXIT_VELOCITY: "130"}), config
-    )
+    result = score_snapshot(engine_snapshot(values={ComponentId.EXIT_VELOCITY: "130"}), config)
     score = next(
         component_score
         for component_score in result.component_scores
@@ -180,9 +182,7 @@ def test_a_value_outside_the_declared_domain_fails_closed(
     config: GreenMachineConfig, out_of_domain: str
 ) -> None:
     with pytest.raises(ScoringInputError, match="outside the declared scoring domain"):
-        score_snapshot(
-            engine_snapshot(values={ComponentId.EXIT_VELOCITY: out_of_domain}), config
-        )
+        score_snapshot(engine_snapshot(values={ComponentId.EXIT_VELOCITY: out_of_domain}), config)
 
 
 # --------------------------------------------------------------------------
@@ -218,9 +218,7 @@ def test_record_missing_awards_an_explicit_zero_with_the_reason(
     config: GreenMachineConfig,
 ) -> None:
     result = score_snapshot(
-        engine_snapshot(
-            missing={ComponentId.BAT_SPEED: MissingReason.TRACKING_UNAVAILABLE}
-        ),
+        engine_snapshot(missing={ComponentId.BAT_SPEED: MissingReason.TRACKING_UNAVAILABLE}),
         config,
     )
     assert isinstance(result, EvaluatedGradeResult)
@@ -231,16 +229,14 @@ def test_record_missing_awards_an_explicit_zero_with_the_reason(
         for audit_entry in result.audit_derivation
         if audit_entry.stage == "missing_recorded_zero"
     )
-    assert "tracking_unavailable" in entry.input_summary
+    assert "TRACKING_UNAVAILABLE" in entry.input_summary  # MissingReason values are upper case
     assert "record_missing" in entry.explanation
 
 
 def test_an_unanticipated_missing_reason_fails_closed(config: GreenMachineConfig) -> None:
     with pytest.raises(ScoringInputError, match="does not anticipate"):
         score_snapshot(
-            engine_snapshot(
-                missing={ComponentId.BAT_SPEED: MissingReason.WEATHER_UNAVAILABLE}
-            ),
+            engine_snapshot(missing={ComponentId.BAT_SPEED: MissingReason.WEATHER_UNAVAILABLE}),
             config,
         )
 
@@ -255,15 +251,13 @@ def test_a_not_evaluable_policy_produces_the_distinct_terminal_state() -> None:
         "INVALID_SOURCE_VALUE, SOURCE_UNAVAILABLE]",
     )  # first occurrence = exit_velocity
     result = score_snapshot(
-        engine_snapshot(
-            missing={ComponentId.EXIT_VELOCITY: MissingReason.SOURCE_UNAVAILABLE}
-        ),
+        engine_snapshot(missing={ComponentId.EXIT_VELOCITY: MissingReason.SOURCE_UNAVAILABLE}),
         config,
     )
     assert isinstance(result, NotEvaluableGradeResult)
-    assert [
-        entry.component_id.value for entry in result.unavailable_required_inputs
-    ] == ["exit_velocity"]
+    assert [entry.component_id.value for entry in result.unavailable_required_inputs] == [
+        "exit_velocity"
+    ]
     stages = [entry.stage for entry in result.audit_derivation]
     assert "missing_required_input" in stages
     assert "evaluability_verdict" in stages
@@ -285,9 +279,7 @@ def test_a_component_with_no_observation_at_all_fails_closed(
 def test_an_insufficient_sample_is_scored_and_warned_exactly_once(
     config: GreenMachineConfig,
 ) -> None:
-    result = score_snapshot(
-        engine_snapshot(insufficient={ComponentId.BARREL_PCT}), config
-    )
+    result = score_snapshot(engine_snapshot(insufficient={ComponentId.BARREL_PCT}), config)
     assert isinstance(result, EvaluatedGradeResult)
     assert _points(result, ComponentId.BARREL_PCT) == Decimal("0.45")  # still scored
     assert result.total_score == Decimal("11.55")  # unchanged by the label
@@ -465,13 +457,9 @@ def test_binary_scoring_awards_all_or_nothing(config: GreenMachineConfig) -> Non
     )
     assert weather_score.bucket_hit is None  # binary components have no bucket
 
-    unqualified = score_snapshot(
-        engine_snapshot(values={ComponentId.WEATHER: "40"}), binary_config
-    )
+    unqualified = score_snapshot(engine_snapshot(values={ComponentId.WEATHER: "40"}), binary_config)
     assert _points(unqualified, ComponentId.WEATHER) == Decimal("0")
-    assert any(
-        entry.stage == "binary_qualification" for entry in unqualified.audit_derivation
-    )
+    assert any(entry.stage == "binary_qualification" for entry in unqualified.audit_derivation)
 
 
 def test_an_unsupported_predicate_input_name_fails_closed() -> None:
@@ -485,8 +473,21 @@ def test_an_unsupported_predicate_input_name_fails_closed() -> None:
 # --------------------------------------------------------------------------
 
 
+def test_the_loader_refuses_an_enabled_fuzzy_policy_before_the_engine_sees_it() -> None:
+    """§19 validation is the first of two independent refusals."""
+    with pytest.raises(ConfigSemanticError, match="fuzzy scoring is not implemented"):
+        _variant("fuzzy_scoring:\n  enabled: false", "fuzzy_scoring:\n  enabled: true")
+
+
 def test_an_enabled_fuzzy_policy_is_refused(config: GreenMachineConfig) -> None:
-    fuzzy_config = _variant("fuzzy_scoring:\n  enabled: false", "fuzzy_scoring:\n  enabled: true")
+    """The engine refuses independently of the loader.
+
+    A loaded configuration can never carry an enabled fuzzy policy, so this
+    constructs one directly: the guard exists so that any future path reaching
+    the engine without §19 validation still fails closed rather than scoring as
+    though the policy were absent (MODEL_SPEC §5.2).
+    """
+    fuzzy_config = config.model_copy(update={"fuzzy_scoring": FuzzyScoringPolicy(enabled=True)})
     with pytest.raises(ScoringConfigError, match="fuzzy scoring is enabled"):
         score_snapshot(engine_snapshot(), fuzzy_config)
 

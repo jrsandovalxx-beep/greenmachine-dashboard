@@ -268,10 +268,11 @@ def test_no_out_of_scope_feature_module_exists() -> None:
         assert banned not in names, f"out-of-scope module name containing {banned!r} found"
 
 
-def test_scoring_features_validation_and_cli_remain_placeholders() -> None:
-    """`reporting` is implemented by GM-030; these four still await tickets
+def test_features_validation_and_cli_remain_placeholders() -> None:
+    """`reporting` is implemented by GM-030 and `scoring` by GM-041 (guarded by
+    test_scoring_boundaries.py); these three still await tickets
     (`validation` was an unguarded placeholder until GM-040)."""
-    for package in ("scoring", "features", "validation", "cli"):
+    for package in ("features", "validation", "cli"):
         files = sorted((PACKAGE_ROOT / package).rglob("*.py"))
         assert [path.name for path in files] == ["__init__.py"], package
 

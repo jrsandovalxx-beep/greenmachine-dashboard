@@ -74,9 +74,7 @@ def engine_snapshot(
             continue
         if component in missing:
             missing_observations.append(
-                synthetic_records.missing_observation(
-                    component, missing[component], sample_type
-                )
+                synthetic_records.missing_observation(component, missing[component], sample_type)
             )
             continue
         sample_count = minimum - 1 if component in insufficient else count
@@ -109,7 +107,6 @@ def engine_snapshot(
         missing_observations=tuple(missing_observations),
         validation_inputs=(),
         weather_is_forecast=any(
-            observation.component_id is ComponentId.WEATHER
-            for observation in present_observations
+            observation.component_id is ComponentId.WEATHER for observation in present_observations
         ),
     )
