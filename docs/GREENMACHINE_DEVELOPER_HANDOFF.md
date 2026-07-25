@@ -4,7 +4,11 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-25, on `feature/gm041-production-grading-engine`.
+Last updated: 2026-07-25 (revision 2), on
+`feature/gm041-production-grading-engine`. **GM-041 is PAUSED** — see §12 for
+the exact in-progress state and §16 for the revision history. This revision
+also records the approved product-identity rulings in §1a/§5 and the approved
+GM-042 Record Book scope in §13.
 
 ---
 
@@ -38,6 +42,29 @@ Core philosophy (each point is architecture-enforced by tests, not aspiration):
   `ingestion/{mlb,savant}/{client,parser}.py`; domain and scoring see only the
   neutral frozen contracts.
 
+## 1a. PROJECT IDENTITY (approved 2026-07-25 — binding on all future work)
+
+**GreenMachine is an evaluation platform, not a betting advisor.** It
+evaluates baseball data; the user makes every decision. This is a Product
+Owner ruling, not a tone preference:
+
+- GreenMachine intentionally does **NOT** tell the user what to bet. It never
+  produces a wager, stake, pick, or recommendation of any kind.
+- **Betting classifications are removed from all future scope.** No future
+  work may reference or implement `LEAN`, `AVOID`, `PASS`, `STRONG_BET`, or
+  any equivalent betting classification. (These appeared in MODEL_SPEC v6.3's
+  signal engine; §5 records the required reconciliation.)
+- The grading engine's outputs are exactly and only:
+  1. **Total Score**
+  2. **Tier** (S/A/B/C/D)
+  3. **Component Breakdown** (per-component and per-category scores)
+  4. **Audit Trail** (the ordered derivation)
+  5. **Warnings** (e.g. insufficient-sample findings)
+  6. **Fallbacks** (provenance of any fallback actually used)
+- Wording discipline everywhere (UI, exports, reports, docs): describe data
+  and derivations, never advice. The existing manual-review worksheet already
+  conforms (user-entered scores, arithmetic total, tier, verbatim disclaimer).
+
 ## 2. CURRENT PROJECT STATUS
 
 Version is **0.2.0** throughout. All milestones below are independently
@@ -50,7 +77,7 @@ reviewed and **FROZEN** unless marked otherwise.
 | GM-030 (+r1, r2) | FROZEN / deployed | Streamlit manual-review prototype + console hub + deployment readiness |
 | GM-040 | Delivered, pending independent review | Operator workflow over the unchanged pipeline + live Ohtani evidence |
 | GM-040-HF1 | Delivered hotfix | `-e .` in requirements.txt so Community Cloud installs the project |
-| GM-041 | IN PROGRESS (this branch) | First production deterministic grading engine (pure, config-driven) |
+| GM-041 | **PAUSED** (this branch; see §12) | First production deterministic grading engine (pure, config-driven) |
 
 **GM-020 — ingestion vertical slice.** Objective: one real game/hitter/pitcher
 from live providers to two frozen snapshots with deterministic replay.
@@ -222,15 +249,34 @@ implements, never invents). 12 points, sum-based (no averaging/rescaling):
 | Pull Power | 2 | pull_pct_air_balls |
 | Environment | 2 | park, weather |
 
-Grades from the internal unrounded total: S [10,12] · A [8,10) · B [6,8) ·
-C [4,6) · D [0,4). Signals in strict priority AVOID → STRONG_BET → LEAN →
-PASS, first match wins, AVOID may override a high grade under the Power
-Profile veto and must carry an override reason (Q27). Strong category =
-`category_score >= category_max * strong_category_fraction` (0.75), compared
-unrounded. Fractional points expected (Q26); allocations profile-invariant
-(Q25); buckets/minimum samples ARE profile- and measurement-specific.
-`attack_angle_quality` is one component satisfied by exactly one measurement
-(`ideal_attack_angle_pct` or `attack_angle_threshold_proxy`).
+Tiers from the internal unrounded total: S [10,12] · A [8,10) · B [6,8) ·
+C [4,6) · D [0,4). Fractional points expected (Q26); allocations
+profile-invariant (Q25); buckets/minimum samples ARE profile- and
+measurement-specific. `attack_angle_quality` is one component satisfied by
+exactly one measurement (`ideal_attack_angle_pct` or
+`attack_angle_threshold_proxy`).
+
+**Engine outputs (approved 2026-07-25, supersedes the v6.3 signal engine):**
+Total Score · Tier · Component Breakdown · Audit Trail · Warnings ·
+Fallbacks — and nothing else. The former signal engine (AVOID → STRONG_BET →
+LEAN → PASS, Q27's override-reason rule, and the Power Profile veto as a
+*signal* mechanism) is **removed from all future scope** per §1a.
+
+**Required reconciliation when GM-041 resumes (do this FIRST, as an explicit
+spec/contract amendment — none of it has been coded yet):**
+- `docs/MODEL_SPEC.md` §16 (signal engine) and the Q27 closure must be
+  amended to the evaluation-only output list; `docs/OPEN_QUESTIONS.md`
+  updated accordingly.
+- The frozen GM-006 `EvaluatedGradeResult` currently REQUIRES `signal` and
+  `signal_reason` fields, and `GreenMachineConfig` carries typed signal
+  rules — both need a PO-approved contract amendment (this may touch
+  evaluation record schema v1 and the golden cases, so it needs its own
+  ruling text; goldens change only via `scripts/update_goldens.py`).
+- The "strong category" fraction (0.75, compared unrounded) existed to feed
+  signal conditions; whether it survives as a pure analytics annotation or is
+  removed is an **open PO question** — do not decide it silently.
+- The committed GM-041 engine WIP (§12) predates this ruling; audit its
+  signal handling during resumption rather than assuming either direction.
 
 Threshold philosophy: **all numeric rules are configuration data**
 (`GreenMachineConfig`): bucket boundaries half-open with a closed terminal
@@ -270,9 +316,9 @@ repo is synthetic, disclaimed, and validation-only.
 - **No network in tests, ever** — suite-wide socket/resolver guard + guarded
   child bootstrap for every spawned Python; the app performs zero calls
   (telemetry disabled); live capture is script-triggered only.
-- **Auditability required** — betting-adjacent research demands the derivation
-  be inspectable years later: counted exclusions, provenance, audit entries,
-  operator reports, replay reports.
+- **Auditability required** — long-horizon evaluation research demands the
+  derivation be inspectable years later: counted exclusions, provenance,
+  audit entries, operator reports, replay reports.
 - Other: append-only persistence with supersession chains (GM-007); goldens
   write only via `scripts/update_goldens.py`; Hypothesis fixed seed 20260724;
   strict JSON (duplicate keys rejected) for every GreenMachine-owned document.
@@ -295,15 +341,17 @@ seeds; ruff + mypy --strict clean.
 - **Pitchers to Target / bullpen analysis** — PO deferred all pitcher-specific
   metrics (incl. any Whiff Rate surface) to a dedicated future tab/tag;
   no bullpen capture exists in manifest v1.
-- **Record Book / outcomes / any database** — nothing to record until grading
-  + outcome ingestion exist; durable storage needs an explicit ruling (ports
-  + in-memory adapters are ready).
-- **Historical calibration / rankings / odds / betting recommendations** —
-  out of scope until the PO defines them; guards ban the surfaces.
+- **Record Book / outcomes / any database** — now the approved **GM-042**
+  (§13), but blocked behind GM-041 completion and a durable-storage ruling
+  (ports + in-memory adapters are ready); nothing to record until grading +
+  outcome ingestion exist.
 - **Dashboard redesign** — waits on PO usability notes from the prototype.
 - **Weather / park expansion** — no approved source (components stay missing).
-- **Signal-engine surfacing in UI** — the engine computes the spec'd signal,
-  but no UI/recommendation surface may present it until a ruling.
+- **Betting classifications and betting advice — permanently out, not
+  deferred** (§1a): no Lean/Avoid/Pass/Strong-Bet or equivalent will ever be
+  implemented; no odds tracking, no CLV, no stake/pick/recommendation
+  surface. Architecture guards already ban several of these strings; keep
+  the guards.
 
 ## 9. KNOWN ISSUES / TECHNICAL DEBT
 
@@ -353,39 +401,100 @@ evidence. Note: this development machine currently has NO GitHub
 credentials/`gh` — if pushing fails, commit locally and hand the operator
 exact push/PR commands.
 
-## 12. NEXT MILESTONE — GM-041 (this branch)
+## 12. NEXT MILESTONE — GM-041 (this branch) — **PAUSED 2026-07-25**
 
 **Objective:** first production deterministic grading engine.
-**Deliverables:** `src/greenmachine/scoring/` engine consuming frozen
-`InputSnapshot`s + `GreenMachineConfig`, producing `EvaluatedGradeResult` /
-`NotEvaluableGradeResult` with a complete ordered audit derivation (every
-awarded AND unawarded point explained), SAMPLE_WARNINGS findings, spec grade
-cutoffs and priority signal rules from config; unit+integration tests over a
-disclaimed synthetic configuration; a sample evaluation of the real
-`run_gm040_ohtani` bundle under that synthetic config; guard updates
-(scoring leaves the placeholder list); handoff + docs.
+**Deliverables (unchanged except outputs):** `src/greenmachine/scoring/`
+engine consuming frozen `InputSnapshot`s + `GreenMachineConfig`, producing
+`EvaluatedGradeResult` / `NotEvaluableGradeResult` with a complete ordered
+audit derivation (every awarded AND unawarded point explained) and
+SAMPLE_WARNINGS findings. Per §1a the outputs are exactly: Total Score,
+Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks — **no signal of
+any kind**. Unit+integration tests over a disclaimed synthetic configuration;
+a sample evaluation of the real `run_gm040_ohtani` bundle under that
+synthetic config; guard updates (scoring leaves the placeholder list);
+handoff + docs.
 **Out of scope:** Today's Slate, bullpens, Record Book, betting
-recommendations/odds/rankings, dashboard redesign, historical calibration,
-persistence wiring, and any production configuration values.
+classifications of any kind (§1a — permanent), dashboard redesign,
+historical calibration, persistence wiring, and any production configuration
+values.
 **Success criteria:** full suite + gates green; GM-040 evidence still replays
 byte-identically; engine is pure (no I/O, clock, network, pandas, floats);
 identical inputs give byte-identical serialized results; sample Ohtani
 evaluation generated and clearly labeled synthetic/non-production.
 
-## 13. FUTURE ROADMAP (recommended order)
+### Exact paused state on `feature/gm041-production-grading-engine`
 
-1. **GM-042** — PO resolves Q11–Q14 → first production model-configuration
-   version (data-only ticket) + golden regeneration under the real engine.
-2. **GM-043** — evaluation persistence wiring (envelope + GM-007 ports; ruling
-   on durable adapter) so evaluations are stored/queryable.
-3. **GM-044** — UI: evaluation view in the console (grade/audit display;
-   signal surfacing needs its own ruling) + PO usability-driven refinements.
-4. **GM-045** — Q15/Q16 pitcher-composite formulas → pitcher capture becomes
-   participating where ruled; unlocks Pitcher Matchup scoring for real.
-5. **GM-046** — outcomes ingestion + Record Book (needs storage ruling).
-6. **GM-047** — slate operations (manifest v2 ruling) → Today's Slate.
-7. Later: Pitchers to Target/bullpens, calibration/backtesting, odds — each
-   gated on an explicit PO specification.
+Committed (in `8de28f7`/`ab095d0`):
+- `src/greenmachine/scoring/engine.py` (~33.5 KB — `score_snapshot`, bucket
+  resolution, aggregation, audit derivation; **written before the §1a signal
+  ruling — audit its signal handling first on resumption**)
+- `src/greenmachine/scoring/errors.py` (`ScoringError`, `ScoringConfigError`,
+  `ScoringInputError`)
+- `src/greenmachine/scoring/__init__.py` (baseline re-exports)
+
+Uncommitted working-tree state (deliberately preserved, NOT committed):
+- `src/greenmachine/scoring/__init__.py` — modified (+22/−3): re-exports
+  `OBSERVED_VALUE_INPUT_NAME`, `score_snapshot`, and the three error types;
+  docstring states purity rules. NOTE: its first docstring line still says
+  "…grades, and signals" — reword during the §5 reconciliation.
+- `tests/unit/scoring/test_engine.py` — untracked, 500 lines, 22 tests.
+- `tests/fixtures/config/valid/gm041_engine_synthetic.yaml` — untracked,
+  414 lines; loudly disclaimed synthetic config (deliberately wrong-for-
+  baseball: category split 2.8/3.1/2.1/2.2/1.8, grade table 3.7/5.9/8.1/9.8,
+  strong fraction 0.66) so it can never be mistaken for the approved model.
+- `tests/fixtures/evaluations/gm041_engine_snapshots.py` — untracked, 115
+  lines; frozen RECENT_7D snapshot builders covering the fixture's eleven
+  components with per-test control of values/missing/insufficient/measurement.
+
+Test status at pause: `pytest tests/unit/scoring -q` → **20 passed, 2
+failed** (genuine WIP, not environment flakes):
+- `test_record_missing_awards_an_explicit_zero_with_the_reason`
+- `test_an_enabled_fuzzy_policy_is_refused`
+
+**Resumption order:** (1) §5 reconciliation amendment (spec + contracts +
+config schema signal removal, with PO ruling text); (2) audit/align the
+committed engine to the six §1a outputs; (3) fix the two failing tests;
+(4) finish the deliverables list above; (5) full gates.
+
+## 13. FUTURE ROADMAP
+
+**GM-042 — Record Book & Performance Analytics (APPROVED 2026-07-25).**
+The Record Book measures **GreenMachine's historical performance — not
+sportsbook market efficiency**. Approved scope:
+
+- Season Summary
+- Daily Results
+- Unit Tracker
+- ROI Summary
+- Performance Analytics
+- Model Calibration
+- Historical Archive
+- Revision History
+
+Explicitly **excluded** from GM-042 (PO ruling): Average Odds, Closing Line
+Value (CLV), Average Confidence Tier.
+
+GM-042 prerequisites the next conversation should surface to the PO early:
+GM-041 complete (there is nothing to record without evaluations); an
+outcome-ingestion definition (Q8 fixed ground truth = ≥1 HR in the evaluated
+game; the `OutcomeRecord` contract and GM-007 append-only ports with
+supersession/revision chains already exist); a durable-storage ruling (no
+database exists or is currently permitted); and a PO definition of "unit"
+for the Unit Tracker / ROI Summary consistent with §1a (GreenMachine records
+the user's own results and the model's calibration — it still never advises).
+
+**After GM-042 (recommended, unnumbered until the PO assigns tickets):**
+- PO resolves Q11–Q14 → first production model-configuration version
+  (data-only ticket) + golden regeneration under the real engine.
+- Evaluation persistence wiring (envelope + GM-007 ports; durable adapter
+  per the GM-042 storage ruling) so evaluations are stored/queryable.
+- UI: evaluation view in the console (score/tier/breakdown/audit display
+  per §1a) + PO usability-driven refinements.
+- Q15/Q16 pitcher-composite formulas → pitcher capture becomes participating
+  where ruled; unlocks Pitcher Matchup scoring for real.
+- Slate operations (manifest v2 ruling) → Today's Slate.
+- Pitchers to Target/bullpens — gated on an explicit PO specification.
 
 ## 14. QUICK START (new conversation checklist)
 
@@ -393,7 +502,9 @@ evaluation generated and clearly labeled synthetic/non-production.
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect all green (a few Windows platform skips).
+3. `python -m pytest -q` — expect green EXCEPT the two known GM-041 WIP
+   failures in `tests/unit/scoring/test_engine.py` (§12) while the pause
+   holds (plus a few Windows platform skips).
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
    evidence/gm020_vertical_slice/run_gm040_ohtani` → "replay OK".
@@ -409,7 +520,9 @@ orchestration `src/greenmachine/ingestion/orchestration.py`; evidence root
 `evidence/gm020_vertical_slice/` (bundles: `prospective_run`,
 `run_gm040_ohtani`); goldens `tests/golden/cases/`; synthetic sample policy
 `tests/fixtures/ingestion/gm020_nonproduction_sample_policy.json`; synthetic
-model config (GM-041) `tests/fixtures/config/gm041_synthetic_model_config.yaml`.
+engine config (GM-041, untracked WIP)
+`tests/fixtures/config/valid/gm041_engine_synthetic.yaml` with snapshot
+builders in `tests/fixtures/evaluations/gm041_engine_snapshots.py`.
 
 **Configuration files:** `pyproject.toml` (version SSOT, extras, tool config),
 `requirements.txt` (deployment; `-e .` first), `.streamlit/config.toml`,
@@ -437,3 +550,10 @@ drives the UI in-process under the network guard. `SteppingClock`/
 `FakeTransport` in `tests/fixtures/ingestion/synthetic_provider_fixtures.py`
 are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 · 3 not published · 4 replay mismatch.
+
+## 16. REVISION HISTORY
+
+| Rev | Date | Commit / branch | Changes |
+|---|---|---|---|
+| 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 2 | 2026-07-25 | this commit, same branch | **GM-041 officially PAUSED** with its exact in-progress state recorded (§12: committed engine/errors modules, uncommitted `__init__` diff, three untracked test/fixture files, 20/22 tests passing with the two named failures, resumption order). Recorded the approved product-identity rulings (§1a): GreenMachine is an evaluation platform, not a betting advisor; betting classifications (Lean/Avoid/Pass/Strong-Bet) removed from all future scope; engine outputs restricted to Total Score, Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks; the user makes the decision. §5 rewritten accordingly with the required MODEL_SPEC §16 / `EvaluatedGradeResult` / config signal-rule reconciliation steps and the open strong-category question. §8 reframed betting items as permanently out. §13 replaced with the approved **GM-042 Record Book & Performance Analytics** scope (Season Summary, Daily Results, Unit Tracker, ROI Summary, Performance Analytics, Model Calibration, Historical Archive, Revision History; explicitly excluding Average Odds, CLV, Average Confidence Tier — the Record Book measures GreenMachine's historical performance, not sportsbook market efficiency) plus unnumbered follow-ons. Appendix fixture paths corrected; quick-start updated for the pause. |
