@@ -1,0 +1,18 @@
+{
+  "disclaimer": [
+    "GM-020 vertical-slice validation only.",
+    "NOT a production model configuration and NOT approved scoring thresholds.",
+    "These minimums exist solely so acceptance evidence can exercise the SampleStatus mechanics;",
+    "they are arbitrary validation values, must never be loaded implicitly,",
+    "and will be replaced when Product Owner question Q14 resolves the production minimums."
+  ],
+  "minimums": {
+    "exit_velocity": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "barrel_pct": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "hard_hit_pct": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "sweet_spot_pct": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "attack_angle_quality": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "bat_speed": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 },
+    "pull_pct_air_balls": { "RECENT_7D": 2, "LONG_TERM_2Y": 13 }
+  }
+}

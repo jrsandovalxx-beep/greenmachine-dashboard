@@ -1,0 +1,5 @@
+# Duplicate mapping key: PyYAML's default is last-one-wins, which would silently
+# discard the first value. The loader must refuse the document instead.
+schema_version: 1
+model_configuration_version: "synthetic-a"
+model_configuration_version: "synthetic-b"

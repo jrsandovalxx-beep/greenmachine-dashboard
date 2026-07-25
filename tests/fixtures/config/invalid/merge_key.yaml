@@ -1,0 +1,6 @@
+# A merge key ('<<') shares structure between mappings. Written with an inline
+# mapping rather than an alias so this fixture exercises the merge-key guard
+# specifically, not the alias guard.
+component:
+  <<: {policy: not_evaluable}
+  extra: "1"

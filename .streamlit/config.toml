@@ -1,0 +1,16 @@
+# GM-030 manual-review prototype — conservative Streamlit configuration for
+# local development and Streamlit Community Cloud. No secrets, no analytics
+# identifiers, no private endpoints: the app works without any secret.
+
+[browser]
+# The dashboard performs no network request; Streamlit's own usage
+# telemetry is disabled so that stays literally true.
+gatherUsageStats = false
+
+[server]
+headless = true
+
+[client]
+# Focused user-facing errors only: unexpected exceptions surface as a type,
+# never an internal traceback. Developer diagnostics belong in logs/tests.
+showErrorDetails = "type"

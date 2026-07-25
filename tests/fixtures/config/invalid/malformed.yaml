@@ -1,0 +1,2 @@
+# Unbalanced bracket: not well-formed YAML at all.
+allocations: { categories: [

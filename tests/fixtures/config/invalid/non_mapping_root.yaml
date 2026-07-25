@@ -1,0 +1,3 @@
+# The root must be a mapping, not a sequence.
+- schema_version: 1
+- model_configuration_version: "synthetic"
