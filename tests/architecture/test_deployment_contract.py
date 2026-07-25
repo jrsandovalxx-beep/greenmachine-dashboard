@@ -17,7 +17,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
 
+# The one local editable project-install line (GM-040-HF1): Community Cloud
+# installs requirements.txt only, and the app resolves its version from
+# installed distribution metadata — so the host must install the project
+# itself. This is not a dependency; it is the deployment's self-install.
+EDITABLE_SELF_INSTALL = "-e ."
+
 APPROVED_REQUIREMENTS = (
+    EDITABLE_SELF_INSTALL,
     "streamlit>=1.32,<2",
     "PyYAML>=6,<7",
     "pydantic>=2,<3",
@@ -39,8 +46,16 @@ def test_requirements_txt_sits_beside_the_entrypoint() -> None:
     assert (REPO_ROOT / "evidence" / "gm020_vertical_slice" / "prospective_run").is_dir()
 
 
-def test_requirements_carry_exactly_the_four_approved_specifications() -> None:
+def test_requirements_carry_exactly_the_approved_specifications() -> None:
+    """The editable self-install first, then the same four bounded runtime/UI
+    dependencies — nothing else."""
     assert _requirement_lines() == APPROVED_REQUIREMENTS
+
+
+def test_the_editable_self_install_is_present_for_community_cloud() -> None:
+    """GM-040-HF1 regression: without `-e .`, the hosted app crashes at import
+    with PackageNotFoundError because no greenmachine distribution exists."""
+    assert EDITABLE_SELF_INSTALL in _requirement_lines()
 
 
 def test_requirements_carry_no_dev_or_test_dependency() -> None:
@@ -50,12 +65,14 @@ def test_requirements_carry_no_dev_or_test_dependency() -> None:
 
 
 def test_requirements_track_the_project_runtime_dependencies_plus_ui() -> None:
-    """Dependency drift fails here: requirements.txt must equal
-    pyproject's runtime dependencies plus the [ui] extra, exactly."""
+    """Dependency drift fails here: beyond the self-install line,
+    requirements.txt must equal pyproject's runtime dependencies plus the
+    [ui] extra, exactly."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     runtime = list(pyproject["project"]["dependencies"])
     ui_extra = list(pyproject["project"]["optional-dependencies"]["ui"])
-    assert sorted(_requirement_lines()) == sorted(runtime + ui_extra)
+    dependency_lines = [line for line in _requirement_lines() if line != EDITABLE_SELF_INSTALL]
+    assert sorted(dependency_lines) == sorted(runtime + ui_extra)
 
 
 def test_no_secret_shaped_deployment_file_exists() -> None:

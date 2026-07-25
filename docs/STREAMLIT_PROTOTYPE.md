@@ -125,11 +125,14 @@ typed one — the app never reads the clock for exports.
 ## Streamlit Community Cloud deployment
 
 Community Cloud installs the repository-root `requirements.txt`
-**automatically** — it contains exactly the bounded runtime/UI dependencies
-the hosted app needs (`streamlit>=1.32,<2`, `PyYAML>=6,<7`, `pydantic>=2,<3`,
+**automatically**. It contains the editable self-install line `-e .`
+(GM-040-HF1: the host installs the local project itself, so the package's
+distribution metadata — and therefore its version — resolves on the deployed
+environment) plus exactly the four bounded runtime/UI dependencies the hosted
+app needs (`streamlit>=1.32,<2`, `PyYAML>=6,<7`, `pydantic>=2,<3`,
 `tzdata>=2024.1`), and nothing development-only. No `packages.txt` is needed
-(no operating-system package is required), and the app inserts `src/` on
-`sys.path` itself, so requirements installation alone is sufficient to launch.
+(no operating-system package is required); installing `requirements.txt`
+alone is sufficient to launch.
 
 The deployment structure the host expects, at the repository root:
 
