@@ -158,12 +158,14 @@ def _milestone_row(ticket: str) -> str:
     return matched[0]
 
 
-# Each delivered ticket and the words its OWN status cell must carry. GM-040 is
-# approved and frozen rather than merged: it was approved on the evidence of the
-# Angels validation, not by a pull request of its own, so requiring "MERGED" of
-# it would be requiring the wrong thing.
+# Each delivered ticket and the words its OWN status cell must carry. GM-040 and
+# GM-040-HF1 are approved and frozen rather than merged: they were approved on
+# the evidence of the Angels validation and the deployed application, not by
+# pull requests of their own, so requiring "MERGED" of them would be requiring
+# the wrong thing.
 _APPROVED_MILESTONE_ROWS = (
     ("GM-040", ("APPROVED", "FROZEN")),
+    ("GM-040-HF1", ("APPROVED", "FROZEN")),
     ("GM-041", ("MERGED",)),
     ("GM-041.5", ("MERGED",)),
     ("GM-041.5-HF1", ("MERGED",)),
@@ -362,7 +364,7 @@ def test_the_handoff_states_the_eleven_run_inventory() -> None:
 
 # The suite size this revision actually produces. Stated once here so the two
 # current-facing places that quote it cannot drift apart, or away from reality.
-EXPECTED_PASS_COUNT = "3,799"
+EXPECTED_PASS_COUNT = "3,800"
 
 
 def test_the_current_expected_pass_count_matches_the_recorded_result() -> None:
