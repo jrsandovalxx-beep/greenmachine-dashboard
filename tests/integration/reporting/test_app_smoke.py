@@ -89,6 +89,29 @@ def test_the_landing_hub_is_the_default_screen() -> None:
     assert "RECENT_7D (last 7 days)" not in text
 
 
+def test_the_landing_hub_names_the_console_not_one_of_its_screens() -> None:
+    """GM-041.5-HF1: the subtitle described the whole app as manual-review-only.
+
+    That stopped being true when the Engine Evaluation screen began running the
+    deterministic grading engine, and the subtitle is the largest text on the
+    landing page. Asserted together with the six destinations, because the
+    wording is only correct while the console really does carry more than the
+    worksheet -- the two claims have to stand or fall together.
+    """
+    app = _fresh_app()
+    text = _rendered_text(app)
+
+    assert "GREENMACHINE RESEARCH CONSOLE" in text
+    assert "v0.2.0" in text
+    assert "MANUAL REVIEW CONSOLE" not in text
+
+    for label in _HUB_LABELS:
+        assert label in text, label
+    assert "ENGINE EVALUATION" in text
+    assert [button.key for button in app.button] == [f"nav_{screen}" for screen in _DESTINATIONS]
+    assert not list(app.exception)
+
+
 def test_every_destination_opens_and_returns_home() -> None:
     app = _fresh_app()
     headings = {

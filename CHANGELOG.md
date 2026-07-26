@@ -14,6 +14,37 @@ GreenMachine tracks **four independent versions**, listed separately in every en
 
 ## [Unreleased]
 
+### Fixed — GM-041.5-HF1 CI stability and landing-page wording (2026-07-26)
+
+**Product specification** v6.3 · **Code** 0.2.0 · **Model configuration** none approved ·
+**Evaluation schema** 1. No frozen contract changed. Post-merge hotfix on top of the merged
+GM-041.5 (PR #4).
+
+- **GitHub Actions is green again.** Merged `main` inherited a property test that could only
+  pass off-CI: `tests/conftest.py` registered the `greenmachine-ci` Hypothesis profile without
+  pinning `suppress_health_check`, and Hypothesis adds `HealthCheck.too_slow` by itself when it
+  detects a hosted runner. The effective profile therefore differed between a developer machine
+  and CI — the one thing a determinism profile must never do — so
+  `test_ci_profile_is_registered_with_deterministic_settings` passed locally and failed on every
+  hosted run. The registration now pins `suppress_health_check=(HealthCheck.too_slow,)`
+  explicitly, making the effective settings identical in both environments, and the test asserts
+  that single tuple. Every other profile field is unchanged. The assertion was **not** widened to
+  accept either shape; that would have re-admitted the environment dependence it exists to rule
+  out.
+- **The landing hub names the console, not one of its screens.** The subtitle read
+  `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0`, which stopped being true once the Engine
+  Evaluation screen began running the deterministic grading engine, and it is the largest text on
+  the landing page. It now reads `GREENMACHINE RESEARCH CONSOLE · v0.2.0`. Wording only — the
+  original artwork, layout, and CSS are untouched, and no recommendation or decision language is
+  introduced. The module docstring and `docs/STREAMLIT_PROTOTYPE.md` title, which described the
+  whole application as a manual-review prototype, are corrected the same way; the historical
+  GM-030 ticket references elsewhere are accurate and left alone.
+- A focused regression asserts the new subtitle renders, the old one does not, all six hub
+  destinations remain present, and `ENGINE EVALUATION` is still available.
+
+No production behaviour, evidence, golden, scoring rule, threshold, schema, or configuration
+content changed.
+
 ### Added — GM-041.5 Stabilization & UX Review (2026-07-25)
 
 **Product specification** v6.3 · **Code** 0.2.0 · **Model configuration** none approved ·

@@ -1,4 +1,8 @@
-"""GM-030 Streamlit manual-review prototype — the presentation composition root.
+"""GreenMachine research console — the presentation composition root.
+
+Introduced by GM-030 as a manual-review prototype; it now carries six screens,
+one of which runs the deterministic grading engine, so the module is named for
+what it is rather than for the screen it started as.
 
 The ONLY module that imports Streamlit. Everything rendered comes from the
 provider-neutral view models in ``greenmachine.reporting``, built over

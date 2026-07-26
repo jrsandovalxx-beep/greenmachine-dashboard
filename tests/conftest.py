@@ -55,7 +55,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from hypothesis import settings
+from hypothesis import HealthCheck, settings
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EVALUATION_FIXTURES = _REPO_ROOT / "tests" / "fixtures" / "evaluations"
@@ -74,8 +74,17 @@ for _entry in (str(_REPO_ROOT), str(_EVALUATION_FIXTURES)):
 # delivered via --hypothesis-seed in pyproject addopts; derandomize stays False
 # because Hypothesis prefers derandomization over a forced seed, and the fixed
 # seed is the configured mechanism. In-memory examples only (no persistent
-# database), no wall-clock deadline, an explicit example budget, and no health
-# check suppressed. Registration is idempotent.
+# database), no wall-clock deadline, and an explicit example budget.
+# Registration is idempotent.
+#
+# `suppress_health_check` is pinned EXPLICITLY rather than left unset.
+# Hypothesis detects a hosted runner (the `CI` environment variable) and adds
+# `HealthCheck.too_slow` to the effective settings on its own, so leaving the
+# field unset produces a profile that differs between a developer machine and
+# CI — the one thing a determinism profile must never do. Declaring the same
+# suppression here makes the effective settings identical in both environments,
+# and makes the value something the project chose rather than something the
+# environment decided.
 settings.register_profile(
     "greenmachine-ci",
     derandomize=False,
@@ -83,6 +92,7 @@ settings.register_profile(
     deadline=None,
     max_examples=50,
     print_blob=False,
+    suppress_health_check=(HealthCheck.too_slow,),
 )
 
 # Deliberate local override for exploratory bug-hunting: a larger budget, and
