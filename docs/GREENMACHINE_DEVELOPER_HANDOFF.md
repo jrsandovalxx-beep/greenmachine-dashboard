@@ -1162,7 +1162,7 @@ settings.register_profile(
     deadline=None,
     max_examples=50,
     print_blob=False,
-    suppress_health_check=(),   # explicit, and empty
+    suppress_health_check=(),  # explicit, and empty
 )
 ```
 
