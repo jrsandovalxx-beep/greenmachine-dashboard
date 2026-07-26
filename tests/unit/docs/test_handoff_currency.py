@@ -134,22 +134,53 @@ def test_the_overview_keeps_the_three_bounds_on_what_that_means(label: str, phra
 # --------------------------------------------------------------------------
 
 
+def _milestone_row(ticket: str) -> str:
+    """The one table row whose FIRST cell names this ticket, exactly.
+
+    Matching on the first cell rather than anywhere in the table is what makes
+    the assertion about *this* ticket. Matching it exactly is what keeps
+    `GM-041` from selecting the `GM-041.5` row — a substring test would, and
+    would then read GM-041.5's status while claiming to check GM-041.
+    """
+    rows = [
+        line
+        for line in _section(r"2\. ").splitlines()
+        if line.lstrip().startswith("|") and line.count("|") >= 3
+    ]
+    matched = [row for row in rows if row.split("|")[1].strip().strip("*` ") == ticket]
+
+    assert len(matched) == 1, (
+        f"expected exactly one milestone row whose first cell is {ticket!r}, found {len(matched)}"
+    )
+    return matched[0]
+
+
 @pytest.mark.parametrize("ticket", ("GM-041", "GM-041.5"), ids=("GM-041", "GM-041.5"))
 def test_the_milestone_table_marks_the_delivered_tickets_merged(ticket: str) -> None:
-    table = _flat(_section(r"2\. "))
-    row = next(
-        (line for line in table.split("|") if line.strip().startswith(ticket)),
-        None,
-    )
-    assert row is not None or ticket in table, f"{ticket} is missing from the milestone table"
-    assert "MERGED" in table.upper()
+    """Each delivered ticket's OWN row says merged.
+
+    The earlier version asserted only that "MERGED" appeared somewhere in the
+    table, which one merged row could satisfy on behalf of every other. This
+    reads the selected row's status cell.
+    """
+    row = _milestone_row(ticket)
+    status = row.split("|")[2].upper()
+
+    assert "MERGED" in status, f"{ticket} row does not say merged: {row.strip()}"
+
+    # The same row, checked for the stale wordings it must never return to.
+    # Asserted here rather than in a separate test because it is a statement
+    # about this ticket's row, and the parametrization that selects that row
+    # already lives here.
+    for stale in ("AWAITING REVIEW", "PENDING INDEPENDENT REVIEW", "NOT STARTED"):
+        assert stale not in status, f"{ticket} row carries stale status {stale!r}: {row.strip()}"
 
 
-def test_no_delivered_ticket_is_still_awaiting_review_in_the_milestone_table() -> None:
-    """The exact stale phrasing rev 15 corrected, scoped to the status table."""
-    table = _flat(_section(r"2\. "))
-
-    assert "COMPLETE, awaiting review" not in table
+def test_meta_the_row_matcher_does_not_confuse_gm041_with_gm0415() -> None:
+    """The bug a substring match would have: two tickets, one a prefix of the other."""
+    assert _milestone_row("GM-041") != _milestone_row("GM-041.5")
+    assert _milestone_row("GM-041").split("|")[1].strip().strip("*` ") == "GM-041"
+    assert _milestone_row("GM-041.5").split("|")[1].strip().strip("*` ") == "GM-041.5"
 
 
 def test_no_current_facing_section_heading_calls_merged_work_awaiting_review() -> None:
@@ -217,11 +248,24 @@ def test_quick_start_reports_six_windows_platform_skips() -> None:
     assert "five Windows platform skips" not in quick_start
 
 
+# The suite size this revision actually produces. Stated once here so the two
+# current-facing places that quote it cannot drift apart, or away from reality.
+EXPECTED_PASS_COUNT = "3,746"
+
+
 def test_the_current_expected_pass_count_matches_the_recorded_result() -> None:
-    """One number, stated in both current-facing places, and they must agree."""
+    """One number, stated in both current-facing places, and they must agree.
+
+    Only current-facing text is inspected. Revision-history entries quote the
+    counts that were true at their own commits — revision 14 legitimately says
+    3,727 — and are excluded by `_current_facing`.
+    """
     current = _flat(_current_facing())
     counts = set(re.findall(r"([\d,]+) tests green \(rev \d+\)", current))
     counts |= set(re.findall(r"expect fully green \(([\d,]+) passed", current))
 
     assert counts, "the current-facing document states no expected pass count"
     assert len(counts) == 1, f"current-facing sections disagree about the pass count: {counts}"
+    assert counts == {EXPECTED_PASS_COUNT}, (
+        f"current-facing sections claim {counts}, but this revision runs {EXPECTED_PASS_COUNT}"
+    )
