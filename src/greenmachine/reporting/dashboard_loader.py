@@ -76,8 +76,10 @@ from .dashboard_models import (
 __all__ = [
     "DashboardLoadError",
     "RunHandle",
+    "VerifiedRun",
     "discover_runs",
     "load_dashboard",
+    "load_verified_run",
 ]
 
 VERIFICATION_SCOPE_NOTE = (

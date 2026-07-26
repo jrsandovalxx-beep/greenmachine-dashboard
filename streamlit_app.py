@@ -114,7 +114,7 @@ DESTINATIONS: tuple[tuple[str, str, str], ...] = (
     ("evaluate", "ENGINE EVALUATION", "Deterministic Engine Evaluation"),
 )
 
-st.set_page_config(page_title="GreenMachine manual review (prototype)", layout="wide")
+st.set_page_config(page_title="GreenMachine research console", layout="wide")
 st.markdown(BASE_THEME_CSS, unsafe_allow_html=True)
 
 
@@ -136,7 +136,7 @@ def _go(screen: str) -> None:
 def _sidebar(run_names: list[str]) -> str:
     with st.sidebar:
         st.title("GreenMachine")
-        st.caption("Manual-review prototype | archived runs only | version 0.2.0")
+        st.caption("Research console | archived evidence and evaluation prototype | version 0.2.0")
         selected = st.selectbox("Approved archived run", run_names, key="run_select")
         st.divider()
         st.subheader("Color legend - data status")
@@ -384,6 +384,94 @@ def _score_from_widget(raw: str) -> int | None:
     return None if raw == "Not scored" else int(raw)
 
 
+# --------------------------------------------------------------------------
+# GM-041.5: durable manual-review state
+# --------------------------------------------------------------------------
+#
+# Streamlit discards a widget-owned session_state key when that widget is not
+# rendered on the current run. The worksheet previously used widget keys as its
+# ONLY storage, so navigating to any other screen destroyed the reviewer's work.
+#
+# The fix is two namespaces with one direction of flow:
+#
+#   review_state::<run>::<field>   durable, never bound to a widget
+#   review_widget::<run>::<field>  transient, owned by Streamlit
+#
+# Widgets hydrate FROM the durable record when the screen renders, and an
+# on_change callback copies the widget value back INTO it. Every read that
+# matters -- the ManualReview record and both exports -- comes from the durable
+# record, never from a widget key. Keys are namespaced per run, so each archived
+# run keeps its own worksheet and gets it back on return.
+
+_STATE_PREFIX = "review_state::"
+_WIDGET_PREFIX = "review_widget::"
+
+_TIMESTAMP_FIELD = "timestamp"
+_NOTES_FIELD = "notes"
+_NOT_SCORED = "Not scored"
+
+
+def _state_key(run_name: str, field: str) -> str:
+    return f"{_STATE_PREFIX}{run_name}::{field}"
+
+
+def _widget_key(run_name: str, field: str) -> str:
+    return f"{_WIDGET_PREFIX}{run_name}::{field}"
+
+
+def _review_fields() -> tuple[str, ...]:
+    """Every durable field of one run's worksheet, in a stable order."""
+    fields = [f"score_{spec.key}" for spec in CATEGORIES]
+    fields += [f"rationale_{spec.key}" for spec in CATEGORIES]
+    fields += [_NOTES_FIELD, _TIMESTAMP_FIELD]
+    return tuple(fields)
+
+
+def _durable(run_name: str, field: str) -> str:
+    """Read one durable value, defaulting to this field's empty representation."""
+    default = _NOT_SCORED if field.startswith("score_") else ""
+    return str(st.session_state.get(_state_key(run_name, field), default))
+
+
+def _persist_field(run_name: str, field: str) -> None:
+    """Copy a widget's current value into the durable record.
+
+    Registered as the widget's ``on_change``. Streamlit runs it while the widget
+    key still exists, which is precisely the window in which the value can be
+    rescued before the key is discarded.
+    """
+    widget_key = _widget_key(run_name, field)
+    if widget_key in st.session_state:
+        st.session_state[_state_key(run_name, field)] = st.session_state[widget_key]
+
+
+def _hydrate_widgets(run_name: str) -> None:
+    """Seed the transient widget keys from the durable record before rendering.
+
+    Only when the widget key is absent: an existing key means Streamlit is
+    mid-interaction and already holds the newer value.
+    """
+    for field in _review_fields():
+        widget_key = _widget_key(run_name, field)
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = _durable(run_name, field)
+
+
+def _manual_review_from_state(run_name: str) -> ManualReview:
+    """Build the record from DURABLE state only -- never from a widget key."""
+    return ManualReview(
+        scores=tuple(
+            (spec.key, _score_from_widget(_durable(run_name, f"score_{spec.key}")))
+            for spec in CATEGORIES
+        ),
+        notes=_durable(run_name, _NOTES_FIELD),
+        rationales=tuple(
+            (spec.key, _durable(run_name, f"rationale_{spec.key}")) for spec in CATEGORIES
+        ),
+        user_entered_timestamp=(_durable(run_name, _TIMESTAMP_FIELD) or None),
+    )
+
+
 def _render_manual_review(data: DashboardData) -> None:
     st.warning(
         f"**{MANUAL_REVIEW_DISCLAIMER}.** You assign every category yourself; the "
@@ -391,42 +479,47 @@ def _render_manual_review(data: DashboardData) -> None:
         f"(S 10-12, A 8-9, B 6-7, C 4-5, D 0-3). No automated recommendation and "
         f"no decision output is produced."
     )
-    key_prefix = f"review::{data.run_name}::"
+    run_name = data.run_name
+    _hydrate_widgets(run_name)
+
+    score_options = {
+        spec.key: [_NOT_SCORED, *[str(value) for value in range(spec.maximum + 1)]]
+        for spec in CATEGORIES
+    }
     score_columns = st.columns(len(CATEGORIES))
     for column, spec in zip(score_columns, CATEGORIES, strict=True):
+        score_field = f"score_{spec.key}"
+        rationale_field = f"rationale_{spec.key}"
         with column:
             st.selectbox(
                 f"{spec.label} (0-{spec.maximum})",
-                ["Not scored", *[str(value) for value in range(spec.maximum + 1)]],
-                key=key_prefix + "score_" + spec.key,
+                score_options[spec.key],
+                key=_widget_key(run_name, score_field),
+                on_change=_persist_field,
+                args=(run_name, score_field),
             )
             st.text_input(
                 "Rationale (optional)",
-                key=key_prefix + "rationale_" + spec.key,
+                key=_widget_key(run_name, rationale_field),
+                on_change=_persist_field,
+                args=(run_name, rationale_field),
             )
-    notes = st.text_area("Notes", key=key_prefix + "notes")
-    user_timestamp = st.text_input(
+    st.text_area(
+        "Notes",
+        key=_widget_key(run_name, _NOTES_FIELD),
+        on_change=_persist_field,
+        args=(run_name, _NOTES_FIELD),
+    )
+    st.text_input(
         "Optional timestamp: typed by you; the app never reads the clock",
-        key=key_prefix + "timestamp",
+        key=_widget_key(run_name, _TIMESTAMP_FIELD),
+        on_change=_persist_field,
+        args=(run_name, _TIMESTAMP_FIELD),
     )
 
-    review = ManualReview(
-        scores=tuple(
-            (
-                spec.key,
-                _score_from_widget(
-                    str(st.session_state.get(key_prefix + "score_" + spec.key, "Not scored"))
-                ),
-            )
-            for spec in CATEGORIES
-        ),
-        notes=str(notes or ""),
-        rationales=tuple(
-            (spec.key, str(st.session_state.get(key_prefix + "rationale_" + spec.key, "") or ""))
-            for spec in CATEGORIES
-        ),
-        user_entered_timestamp=(user_timestamp or None),
-    )
+    # Built from the DURABLE record, so the worksheet and both exports survive
+    # navigation to any other screen and come back intact.
+    review = _manual_review_from_state(run_name)
 
     if review.is_complete:
         st.success(
@@ -684,17 +777,72 @@ def _render_not_evaluable(result: GradeResult) -> None:
     _render_fallbacks(result)
 
 
+# A typed failure's own message is written for engineers and can carry an
+# absolute path, a username, or raw OSError prose — for example
+# "[Errno 13] Permission denied: '/very/private/secret/config.yaml'". None of
+# that belongs on a rendered screen, so the UI never prints `failure.message`
+# (nor `failure.context.file_path`). It prints the stable error CATEGORY, which
+# is a closed vocabulary, plus one of these fixed sentences.
+#
+# Keyed on the stable `error_type` string rather than on class identity, so the
+# adapter stays deterministic and needs no import from the error hierarchy. An
+# unrecognised category falls back to the generic sentence: safe by
+# construction rather than by remembering to add an entry.
+_SAFE_FAILURE_WORDING: dict[str, str] = {
+    "ConfigParseError": ("The synthetic non-production configuration could not be read or parsed."),
+    "ConfigSchemaError": (
+        "The synthetic non-production configuration does not match the required "
+        "configuration schema."
+    ),
+    "ConfigSemanticError": (
+        "The synthetic non-production configuration is structurally valid but "
+        "violates a model-specification invariant."
+    ),
+    "ConfigVersionError": (
+        "The synthetic non-production configuration's version identity could not be established."
+    ),
+    "ConfigIntegrityError": (
+        "The synthetic non-production configuration failed its integrity check."
+    ),
+    "SourceModifiedError": (
+        "The synthetic non-production configuration changed on disk after it was "
+        "loaded, so it can no longer be trusted for this evaluation."
+    ),
+    "SourceUnavailableError": (
+        "The synthetic non-production configuration is no longer available to re-verify."
+    ),
+    "ScoringConfigError": "The configuration cannot drive the grading engine for this run.",
+    "ScoringInputError": (
+        "The archived snapshot and the configuration disagree, so no evaluation was produced."
+    ),
+    "ScoringError": "The grading engine could not produce an evaluation for this run.",
+}
+
+_GENERIC_FAILURE_WORDING = "The deterministic evaluation could not be produced for this run."
+
+
+def _safe_failure_wording(failure: GreenMachineError) -> str:
+    """One fixed, user-safe sentence for a typed failure. Never its own message."""
+    return _SAFE_FAILURE_WORDING.get(failure.error_type, _GENERIC_FAILURE_WORDING)
+
+
 def _render_evaluation_unavailable(failure: GreenMachineError) -> None:
-    """A configuration or scoring failure — never a run-verification failure."""
+    """A configuration or scoring failure — never a run-verification failure.
+
+    The typed failure object is passed in whole and left unmutated; only its
+    stable ``error_type`` reaches the screen. Nothing derived from a filesystem
+    path, a username, or a traceback is rendered.
+    """
     st.error(
         f"{ERROR_COLOR.icon} **Evaluation unavailable**\n\n"
         f"- error category: `{failure.error_type}`\n"
-        f"- {failure.message}"
+        f"- {_safe_failure_wording(failure)}"
     )
     st.caption(
         "The archived run itself verified successfully. Only the deterministic "
         "evaluation could not be produced, so no partial result is shown. Every "
-        "other screen remains available."
+        "other screen remains available. Diagnostic detail is deliberately not "
+        "shown here: it can contain local filesystem paths."
     )
 
 

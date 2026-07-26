@@ -194,7 +194,7 @@ def test_no_recommendation_language_is_rendered() -> None:
 def test_manual_review_completes_and_tiers() -> None:
     app = _fresh_app()
     _open(app, "review")
-    prefix = "review::prospective_run::"
+    prefix = "review_widget::prospective_run::"
     for key, value in (
         (prefix + "score_power_profile", "3"),
         (prefix + "score_pitcher_matchup", "3"),
@@ -214,7 +214,7 @@ def test_manual_review_completes_and_tiers() -> None:
 def test_an_incomplete_worksheet_shows_no_final_tier() -> None:
     app = _fresh_app()
     _open(app, "review")
-    app.selectbox(key="review::prospective_run::score_power_profile").select("2")
+    app.selectbox(key="review_widget::prospective_run::score_power_profile").select("2")
     app.run()
     info_text = " ".join(str(element.value) for element in app.info)
     assert "Worksheet incomplete" in info_text
