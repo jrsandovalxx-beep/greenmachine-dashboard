@@ -55,7 +55,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, settings
+from hypothesis import settings
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EVALUATION_FIXTURES = _REPO_ROOT / "tests" / "fixtures" / "evaluations"
@@ -77,14 +77,26 @@ for _entry in (str(_REPO_ROOT), str(_EVALUATION_FIXTURES)):
 # database), no wall-clock deadline, and an explicit example budget.
 # Registration is idempotent.
 #
-# `suppress_health_check` is pinned EXPLICITLY rather than left unset.
-# Hypothesis detects a hosted runner (the `CI` environment variable) and adds
-# `HealthCheck.too_slow` to the effective settings on its own, so leaving the
-# field unset produces a profile that differs between a developer machine and
-# CI — the one thing a determinism profile must never do. Declaring the same
-# suppression here makes the effective settings identical in both environments,
-# and makes the value something the project chose rather than something the
-# environment decided.
+# `suppress_health_check` is pinned EXPLICITLY, and pinned to EMPTY.
+#
+# Hypothesis fills any setting a profile leaves unspecified from the active
+# built-in profile. On a hosted runner it detects CI (the `CI` and
+# `GITHUB_ACTIONS` environment variables) and that built-in profile suppresses
+# `HealthCheck.too_slow` — so an unspecified field silently resolved to `()`
+# on a developer machine and to `(HealthCheck.too_slow,)` in CI. A determinism
+# profile must never vary with its environment like that.
+#
+# Passing the empty tuple explicitly blocks the inheritance outright: the
+# declared value wins in every environment, and it is the value GreenMachine
+# actually wants. **No health check is suppressed** — that is the accepted
+# policy of ADR-0008, and it is stated identically in `tests/property/
+# conftest.py` and `tests/README.md`. A suppressed check is a silenced signal
+# about test quality, and this project would rather see it and act on it.
+#
+# GM-041.5-HF1 briefly pinned `(HealthCheck.too_slow,)` here. That removed the
+# environment dependence but adopted the wrong value, contradicting all three
+# policy sources; HF2 supersedes it. Keeping the pin while emptying it retains
+# everything HF1 got right.
 settings.register_profile(
     "greenmachine-ci",
     derandomize=False,
@@ -92,7 +104,7 @@ settings.register_profile(
     deadline=None,
     max_examples=50,
     print_blob=False,
-    suppress_health_check=(HealthCheck.too_slow,),
+    suppress_health_check=(),
 )
 
 # Deliberate local override for exploratory bug-hunting: a larger budget, and

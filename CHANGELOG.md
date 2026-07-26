@@ -14,6 +14,40 @@ GreenMachine tracks **four independent versions**, listed separately in every en
 
 ## [Unreleased]
 
+### Fixed — GM-041.5-HF2 deterministic Hypothesis health-check policy (2026-07-26)
+
+**Product specification** v6.3 · **Code** 0.2.0 · **Model configuration** none approved ·
+**Evaluation schema** 1. No frozen contract changed. Supersedes the health-check decision in
+GM-041.5-HF1; the HF1 hub-wording work is untouched.
+
+- **The accepted no-suppression policy is restored, without reintroducing the environment
+  dependence.** HF1 correctly identified that leaving `suppress_health_check` unspecified lets
+  Hypothesis inherit it from the active built-in profile — which on a hosted runner suppresses
+  `HealthCheck.too_slow` — and correctly concluded the field must be pinned. It then pinned the
+  wrong value. `tests/property/conftest.py`, `tests/README.md`, and ADR-0008 all state that
+  GreenMachine suppresses **no** health check, so HF1 left the repository asserting two
+  contradictory policies at once, and no test noticed. The registration now passes
+  `suppress_health_check=()`: explicit, so nothing is inherited from the environment, and empty,
+  so the value is the one the project actually chose. `test_ci_profile_is_registered_with_deterministic_settings`
+  asserts exactly `()`. Every other profile field — `derandomize=False`, `database=None`,
+  `deadline=None`, `max_examples=50`, `print_blob=False` — is unchanged, as is the fixed seed
+  20260724 delivered through `pyproject` addopts.
+- **`HealthCheck.too_slow` does not fire under the restored policy.** The property suite was run
+  with the empty tuple under `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true`; all three pass. No
+  timing limit was raised, no check suppressed, and no test skipped or xfailed to reach that
+  result.
+- **A subprocess probe proves the profile is identical across environments.** Hypothesis decides
+  CI-ness while it is being imported, so an in-process `os.environ` edit proves nothing; each
+  case therefore registers the profile in a fresh interpreter under a fabricated environment and
+  reads it back. The three dumps are compared to each other as well as to the declared values,
+  and a meta-test confirms an *unspecified* profile still does vary with CI — so the guard is
+  measuring something real.
+- **A documentation-integrity regression prevents the drift from recurring.** Four sources
+  describe this profile; HF1 changed one and left three contradicting it. The new guard compares
+  each document's claimed values against the live registered profile and against each other,
+  matching meaning rather than one fixed sentence, so the files can be reworded freely but cannot
+  disagree.
+
 ### Fixed — GM-041.5-HF1 CI stability and landing-page wording (2026-07-26)
 
 **Product specification** v6.3 · **Code** 0.2.0 · **Model configuration** none approved ·
@@ -26,11 +60,14 @@ GM-041.5 (PR #4).
   detects a hosted runner. The effective profile therefore differed between a developer machine
   and CI — the one thing a determinism profile must never do — so
   `test_ci_profile_is_registered_with_deterministic_settings` passed locally and failed on every
-  hosted run. The registration now pins `suppress_health_check=(HealthCheck.too_slow,)`
-  explicitly, making the effective settings identical in both environments, and the test asserts
-  that single tuple. Every other profile field is unchanged. The assertion was **not** widened to
-  accept either shape; that would have re-admitted the environment dependence it exists to rule
-  out.
+  hosted run. The registration now pins `suppress_health_check` explicitly, making the effective
+  settings identical in both environments, and the test asserts that single value. Every other
+  profile field is unchanged. The assertion was **not** widened to accept either shape; that
+  would have re-admitted the environment dependence it exists to rule out.
+  **Superseded by GM-041.5-HF2:** HF1 pinned the field to `(HealthCheck.too_slow,)`. Pinning was
+  right and the value was wrong — it contradicted the no-suppression policy recorded in
+  `tests/property/conftest.py`, `tests/README.md`, and ADR-0008. HF2 keeps the explicit pin and
+  empties it.
 - **The landing hub names the console, not one of its screens.** The subtitle read
   `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0`, which stopped being true once the Engine
   Evaluation screen began running the deterministic grading engine, and it is the largest text on

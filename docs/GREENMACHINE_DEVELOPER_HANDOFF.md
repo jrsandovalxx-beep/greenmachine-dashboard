@@ -4,19 +4,21 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-26 (revision 13), on
-`feature/gm041-5-hf1-ci-and-hub-wording`. **GM-041 and GM-041.5 are both
-APPROVED AND MERGED** — GM-041.5 landed as PR #4, and `origin/main` is at
-`48e8443`. **GM-041.5-HF1 — CI stability and landing-page wording — is COMPLETE
-and awaiting review** (§12i): merged `main` inherited a Hypothesis profile whose
-effective settings differed under `CI=true`, so GitHub Actions was red on every
-commit while the local suite was green, and the landing hub still called the
-whole application a manual-review console. Both are corrected; no production
-behaviour, evidence, golden, scoring rule, threshold, schema, or configuration
-content changed. See §12 for the delivered GM-041.5 state, §12i for this hotfix,
-§11a for the repository-history issue and its resolution, §9 for the deferred
-Windows archive line-ending risk, §0 for the standing one-ticket rule, and §16
-for the revision history.
+Last updated: 2026-07-26 (revision 14), on
+`feature/gm041-5-hf2-hypothesis-health-policy`. **GM-041, GM-041.5, and
+GM-041.5-HF1 are all APPROVED AND MERGED** — HF1 landed as PR #5 and
+`origin/main` is at `c2653bb`. **GM-041.5-HF2 — deterministic Hypothesis
+health-check policy — is COMPLETE and awaiting review** (§12j): HF1 correctly
+pinned `suppress_health_check` to stop the profile inheriting a CI-dependent
+value, but pinned it to `(HealthCheck.too_slow,)`, which contradicts the
+no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`,
+and ADR-0008. HF2 keeps the explicit pin and empties it, so the profile is both
+environment-independent and compliant. HF1's landing-page wording work is
+untouched. No production behaviour, evidence, golden, scoring rule, threshold,
+schema, or configuration content changed. See §12 for the delivered GM-041.5
+state, §12i for HF1, §12j for this hotfix, §11a for the repository-history issue
+and its resolution, §9 for the deferred Windows archive line-ending risk, §0 for
+the standing one-ticket rule, and §16 for the revision history.
 
 ---
 
@@ -390,7 +392,7 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,698 tests green (rev 13) across
+`streamlit_app.py`; evidence ships in-repo. 3,727 tests green (rev 14) across
 hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
@@ -1039,6 +1041,13 @@ property.
 
 ### 12i. GM-041.5-HF1 — CI stability and landing-page wording (rev 13)
 
+> **Health-check decision superseded by GM-041.5-HF2 (§12j, rev 14).** HF1 was
+> right that `suppress_health_check` must be pinned explicitly and wrong about
+> the value: it pinned `(HealthCheck.too_slow,)`, contradicting the
+> no-suppression policy of ADR-0008. HF2 keeps the explicit pin and empties it.
+> Everything else in this section — the diagnosis, and all of the landing-page
+> wording work — stands and is unchanged.
+
 A post-merge hotfix on top of the merged GM-041.5 (PR #4, `main` at `48e8443`).
 Two defects, both inherited by `main` at merge, neither affecting production
 behaviour.
@@ -1116,6 +1125,92 @@ are unchanged, and the four archived synthetic scores are unchanged
 `evidence/` or `tests/golden/` changed, and no domain contract, evaluation
 schema, scoring rule, or threshold changed.
 
+### 12j. GM-041.5-HF2 — deterministic Hypothesis health-check policy (rev 14)
+
+A narrow correction on merged `main` (`c2653bb`), superseding one decision in
+§12i and nothing else.
+
+**What HF1 got right.** Hypothesis fills any setting a profile leaves
+unspecified from the active built-in profile. On a hosted runner it detects CI —
+through the `CI` and `GITHUB_ACTIONS` environment variables — and that built-in
+profile suppresses `HealthCheck.too_slow`. So an unspecified field silently
+resolved to `()` on a developer machine and to `(HealthCheck.too_slow,)` in
+GitHub Actions. A *determinism* profile must never vary that way, and the field
+must therefore be pinned explicitly. That diagnosis was correct and stands.
+
+**What HF1 got wrong.** It pinned the field to `(HealthCheck.too_slow,)` —
+adopting the environment's value as the project's own. Three accepted sources
+say the opposite:
+
+| Source | States |
+|---|---|
+| `tests/property/conftest.py` | "No health check is suppressed." |
+| `tests/README.md` | `| health checks | none suppressed |` |
+| `docs/adr/0008-golden-testing-strategy.md` | "no suppressed health checks" |
+
+After HF1 the repository asserted two contradictory health-check policies at
+once, and no test noticed. Turning CI green was correct; doing it by changing
+the policy rather than the inheritance was not.
+
+**The correction.** One character class, and the whole difference:
+
+```python
+settings.register_profile(
+    "greenmachine-ci",
+    derandomize=False,
+    database=None,
+    deadline=None,
+    max_examples=50,
+    print_blob=False,
+    suppress_health_check=(),   # explicit, and empty
+)
+```
+
+**Explicit** blocks the inheritance — nothing is taken from the environment.
+**Empty** is the accepted policy. The two properties are independent, and HF1
+achieved only the first. `test_ci_profile_is_registered_with_deterministic_settings`
+asserts exactly `()`, still as a single equality; accepting either shape would
+re-admit the dependence the pin exists to remove. No other Hypothesis setting
+changed, and the fixed seed 20260724 still arrives through `pyproject` addopts.
+
+**A suppressed check is a silenced signal.** `HealthCheck.too_slow` reports that
+data generation is slow — a statement about test quality. GreenMachine would
+rather see it. Under the restored policy it does not fire: the property suite
+passes with `CI` unset, with `CI=true`, and with `GITHUB_ACTIONS=true`. Had it
+fired, the standing instruction was to investigate and report rather than
+suppress it, raise a timing limit, or skip the test.
+
+**Regression coverage.**
+
+`tests/property/test_hypothesis_profile_policy.py` proves the profile is
+identical across all three environment shapes. Hypothesis decides CI-ness *while
+it is being imported*, so a test that sets `os.environ` in-process proves
+nothing — the decision has already been made. Each case therefore registers the
+profile in a **subprocess** with a fabricated environment and reads it back, with
+`CI` and `GITHUB_ACTIONS` cleared first so the parent's own environment cannot
+make a case pass for the wrong reason. The three dumps are compared to one
+another as well as to the declared values, because three equalities against a
+shared constant could all hold while the environments still differed. A
+meta-test confirms an *unspecified* profile still does vary with CI; if
+Hypothesis ever changes that, the guard is measuring nothing and this test says
+so.
+
+`tests/property/test_hypothesis_policy_documentation.py` stops the four sources
+drifting apart again. It reads the registration from the **AST** — the same file
+also registers `greenmachine-exploratory` with a deliberately larger budget, so
+a whole-file text scan would conflate them — and compares every value each
+document claims against the **live registered profile** and against every other
+document. Matching is semantic: a health-check claim must mention health checks
+*and* deny suppression, in any wording. These files can be rewritten freely;
+they cannot disagree.
+
+**Scope.** HF1's landing-page work is untouched: the
+`GREENMACHINE RESEARCH CONSOLE · v0.2.0` subtitle, the current-app module
+docstring, the *Streamlit Research Console* documentation title, and the
+six-destination hub regression all stand. No application behaviour, scoring
+rule, threshold, evidence bundle, golden output, configuration content,
+`.gitattributes`, or nested non-canonical `greenmachine/` path changed.
+
 ---
 
 ## 13. FUTURE ROADMAP
@@ -1186,7 +1281,7 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,698 passed as of rev 13, plus
+3. `python -m pytest -q` — expect fully green (3,727 passed as of rev 14, plus
    five Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
@@ -1243,6 +1338,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 14 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **GM-041.5-HF2 — deterministic Hypothesis health-check policy** (§12j). Supersedes one decision in §12i and nothing else. HF1 correctly diagnosed that an unspecified `suppress_health_check` is inherited from the active built-in profile — which suppresses `HealthCheck.too_slow` on a hosted runner — and correctly concluded the field must be pinned; it then pinned it to `(HealthCheck.too_slow,)`, adopting the environment's value as the project's own. That contradicted the no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`, and ADR-0008, leaving the repository asserting two policies at once with no test noticing. The registration now passes `suppress_health_check=()` — **explicit**, so nothing is inherited, and **empty**, so the value is the accepted policy; the two properties are independent and HF1 achieved only the first. The test asserts exactly `()`, still as a single equality. No other Hypothesis setting changed and the fixed seed 20260724 still arrives through addopts. `HealthCheck.too_slow` does **not** fire under the restored policy in any environment; no timing limit was raised and no test skipped, xfailed, or weakened. New coverage: a **subprocess** probe proving the profile is identical under `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true` (in-process `os.environ` edits prove nothing, because Hypothesis decides CI-ness at import), comparing the three dumps to each other as well as to the declared values, plus a meta-test confirming an unspecified profile still varies; and a documentation-integrity guard that reads the registration from the AST and compares every claimed value across all four sources semantically, so they may be reworded but cannot disagree. HF1's landing-page wording work is untouched. Verified: 3,727 passed / 6 skipped across hash seeds 0/1/42 with `CI` unset and again with `CI=true`, plus a `GITHUB_ACTIONS=true` run; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence, goldens, `.gitattributes`, and the nested tree unchanged. No frozen contract changed. |
 | 13 | 2026-07-26 | this commit, on `feature/gm041-5-hf1-ci-and-hub-wording` | **GM-041.5-HF1 — CI stability and landing-page wording** (§12i). A post-merge hotfix on the merged GM-041.5 (PR #4, `main` at `48e8443`). (1) **GitHub Actions was red on every commit and had been for five deliveries.** The `greenmachine-ci` Hypothesis profile did not pin `suppress_health_check`, and Hypothesis adds `HealthCheck.too_slow` itself when it detects a hosted runner — so a *determinism* profile had environment-dependent effective settings, and `test_ci_profile_is_registered_with_deterministic_settings` passed locally while failing on every hosted run. The registration now pins `suppress_health_check=(HealthCheck.too_slow,)` explicitly, every other field unchanged, and the test asserts that single tuple; it was deliberately **not** widened to accept either shape, which would have re-admitted the dependence it exists to rule out. Local verification now includes a `CI=true` pass, since that is the only way this class of defect is visible from a developer machine. (2) **The landing hub named one screen rather than the console**: `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0` became `GREENMACHINE RESEARCH CONSOLE · v0.2.0`, wording only, with the original artwork, layout, and CSS untouched and no recommendation or decision language introduced; the module docstring and `docs/STREAMLIT_PROTOTYPE.md` title were corrected the same way, while the historical GM-030 references were left alone as accurate. A focused regression asserts the new subtitle, the absence of the old one, all six destinations, and `ENGINE EVALUATION`. Verified six ways — hash seeds 0/1/42 with `CI` unset and again with `CI=true`, identical outcome in all six; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence and goldens unchanged. No frozen contract changed. |
 | 12 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 catalog discovery failure safety** (§12h). `main()` called `discover_runs(EVIDENCE_ROOT)` **before** any `try/except GreenMachineError`, and discovery converted none of its three fallible filesystem operations (`root.resolve()`, `root.iterdir()`, `child.resolve()`) — so an unreadable evidence root, or one vanishing between the directory check and the enumeration, escaped as a raw `OSError` naming the root's absolute path. §12g could not cover this: `load_verified_run` types the failures of one *selected* run, and discovery is what produces the list to select from, so it runs strictly earlier with no run-level boundary in between. `discover_runs` is now a thin typed boundary around `_discover_runs` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, names no path, and preserves `__cause__`; discovery stays deterministic, sorted, and path-confined, the symlink-escape rule is untouched, an absent or non-directory root still returns `()`, and no partial catalog is ever returned. A dedicated `_render_catalog_unavailable` screen shows *Archived-run catalog unavailable*, the stable category, and one fixed safe sentence — deliberately not the archived-run screen, which names a selected run that does not exist yet — with no selector, no partial dashboard, and no message, context, exception string, evidence root, or traceback. `EVIDENCE_ROOT` no longer calls `.resolve()` at import, where a failure would precede every typed boundary; the override is stored unresolved and resolved inside `discover_runs`. New coverage: a discovery unit suite injecting at all three fallible operations (with a seam that runs the whole algorithm, including the real confinement check, so its control is not vacuous) and an AppTest suite covering the renderer and the real end-to-end conversion, plus two anti-vacuity controls. The AST guard now also tracks failures bound by `except GreenMachineError as ...`, so `main()` is covered, and a new test asserts the guard genuinely inspects all three screens rather than passing by silence. Verified: 3,697 passed / 6 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 11 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 archived-run failure safety** (§12g). Two independent defects on the archived-run error path, both real. (1) **Raw-message disclosure.** `_render_focused_error()` printed `failure.message`, so a path-bearing `DashboardLoadError` rendered the full private filesystem path — the same class of defect §12e fixed for the Evaluation screen, in the other renderer. A safe archived-run presentation adapter now shows the fixed heading, the selected run **name**, the stable `error_type`, and one fixed safe sentence from a nine-category table with a generic fallback; never the message, the context file path, an exception string, raw `OSError` prose, an absolute path, a username, or a traceback. Both adapters now share one `_safe_wording` lookup, so the fallback rule exists in exactly one place. (2) **Uncaught `OSError`.** A `PermissionError` or a racing `FileNotFoundError` from bundle reading, replay verification, a snapshot read, or a report read escaped the loader as a raw traceback, because `OSError` is not a `GreenMachineError` and the app catches nothing wider. `load_verified_run` is now a thin boundary around `_build_verified_run` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, carries the run name and no path, and preserves `__cause__`; `except Exception` is not used and no integrity verdict changes. New regressions: a loader unit suite injecting both `OSError` kinds at all four read boundaries with sensitive-looking paths (plus a control proving the seam still loads a healthy run), and an AppTest suite driving both the renderer and the real end-to-end conversion while proving a second approved run stays usable. An AST anti-regression guard now forbids **any** function taking a `GreenMachineError` from rendering it raw, with meta-tests proving the guard catches the exact prior shape. The hub's stale *No automated scoring* claim is corrected. Verified: 3,665 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration source digest and semantic hash unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
