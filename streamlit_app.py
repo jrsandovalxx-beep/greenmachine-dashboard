@@ -77,9 +77,16 @@ from greenmachine.scoring import ScoringError, score_snapshot  # noqa: E402
 # only through deployment configuration (an environment variable set by the
 # operator or the test harness) — never through a UI control. Adding another
 # approved archived run beneath it requires no dashboard-code change.
+#
+# Held UNRESOLVED on purpose. `Path.resolve()` touches the filesystem and can
+# raise, and this runs at import — before any typed presentation boundary
+# exists — so a resolution failure here would surface as a Streamlit traceback
+# naming the configured root. `discover_runs()` performs the resolution inside
+# its own typed boundary instead, where a failure becomes a DashboardLoadError
+# that the catalog renderer can present safely.
 _EVIDENCE_OVERRIDE = os.environ.get("GREENMACHINE_EVIDENCE_ROOT", "")
 EVIDENCE_ROOT = (
-    Path(_EVIDENCE_OVERRIDE).resolve()
+    Path(_EVIDENCE_OVERRIDE)
     if _EVIDENCE_OVERRIDE
     else _REPO_ROOT / "evidence" / "gm020_vertical_slice"
 )
@@ -780,12 +787,17 @@ def _render_not_evaluable(result: GradeResult) -> None:
 # nor a traceback). Each prints the stable error CATEGORY, which is a closed
 # vocabulary, plus one fixed sentence chosen from a table below.
 #
-# Two failure surfaces, two tables, one lookup:
+# Three failure surfaces, three tables, one lookup:
 #
+#   * the CATALOG could not be read at all       -> _render_catalog_unavailable
 #   * the archived RUN failed to verify or load  -> _render_focused_error
 #   * the run verified but its EVALUATION failed -> _render_evaluation_unavailable
 #
-# Both tables are keyed on the stable `error_type` string rather than on class
+# They are kept semantically distinct because they fail at different moments and
+# a reviewer needs to know which. The catalog surface in particular must not
+# claim a *selected* run failed: when it fires, no run has been selected yet.
+#
+# Every table is keyed on the stable `error_type` string rather than on class
 # identity, so the adapter stays deterministic and needs no import from the
 # error hierarchy.
 
@@ -798,6 +810,39 @@ def _safe_wording(failure: GreenMachineError, wording: Mapping[str, str], generi
     construction rather than by someone remembering to extend a table.
     """
     return wording.get(failure.error_type, generic)
+
+
+# Categories that can surface from reading the catalog of approved runs.
+# Deliberately worded about the CATALOG, never about a run: nothing has been
+# selected at this point, so blaming a run would be a lie.
+_SAFE_CATALOG_WORDING: dict[str, str] = {
+    "DashboardLoadError": "The approved archived-run catalog could not be read safely.",
+}
+
+_GENERIC_CATALOG_WORDING = "The approved archived-run catalog could not be read safely."
+
+
+def _render_catalog_unavailable(failure: GreenMachineError) -> None:
+    """The catalog of approved runs could not be read — before any selection.
+
+    Distinct from :func:`_render_focused_error`, which describes a *selected*
+    run. Reached only when discovery itself fails, so it names no run, offers no
+    selector, and shows no partial dashboard. The typed failure is passed in
+    whole and left unmutated; only its stable ``error_type`` reaches the screen,
+    never the configured evidence root.
+    """
+    st.error(
+        f"{ERROR_COLOR.icon} **Archived-run catalog unavailable**\n\n"
+        f"- error category: `{failure.error_type}`\n"
+        f"- {_safe_wording(failure, _SAFE_CATALOG_WORDING, _GENERIC_CATALOG_WORDING)}"
+    )
+    st.caption(
+        "No archived run can be displayed until the catalog becomes available. "
+        "No run was selected, so nothing here describes a particular run. "
+        "Diagnostic detail is deliberately not shown: it can contain local "
+        "filesystem paths. The failure is preserved in full for engineering "
+        "diagnosis."
+    )
 
 
 # Categories that can surface from verifying and loading one archived run.
@@ -1001,7 +1046,16 @@ def _render_evaluation(run: VerifiedRun) -> None:
 
 
 def main() -> None:
-    handles = discover_runs(EVIDENCE_ROOT)
+    # Discovery is the first thing that touches the filesystem, and it happens
+    # before a run has been selected — so the run-level boundary below cannot
+    # protect it. A typed catalog failure gets its own screen and stops here.
+    try:
+        handles = discover_runs(EVIDENCE_ROOT)
+    except GreenMachineError as failure:
+        _render_catalog_unavailable(failure)
+        st.stop()
+        return
+
     if not handles:
         st.error(
             f"{ERROR_COLOR.icon} No approved archived run was found beneath the "

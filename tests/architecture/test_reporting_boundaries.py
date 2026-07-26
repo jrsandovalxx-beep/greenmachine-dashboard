@@ -319,24 +319,39 @@ def test_the_app_never_converts_a_decimal_through_float() -> None:
 _UNSAFE_FAILURE_ATTRIBUTES = frozenset({"message", "context", "args"})
 
 
-def _failure_parameters(function: ast.FunctionDef) -> set[str]:
-    """Parameters this function declares as typed GreenMachine failures."""
+def _failure_names(function: ast.FunctionDef) -> set[str]:
+    """Every name in this function that holds a typed GreenMachine failure.
+
+    Two ways one arrives: declared as a parameter (a renderer), or bound by an
+    ``except GreenMachineError as failure`` clause (a handler). Both are tracked,
+    because a handler that renders its own caught error is the same defect as a
+    renderer that renders its argument.
+    """
     arguments = (
         *function.args.posonlyargs,
         *function.args.args,
         *function.args.kwonlyargs,
     )
-    return {
+    names = {
         argument.arg
         for argument in arguments
         if argument.annotation is not None
         and "GreenMachineError" in ast.unparse(argument.annotation)
     }
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.ExceptHandler)
+            and node.name is not None
+            and node.type is not None
+            and "GreenMachineError" in ast.unparse(node.type)
+        ):
+            names.add(node.name)
+    return names
 
 
 def _raw_failure_offenders(function: ast.FunctionDef) -> list[str]:
     """Every place this function would put a raw failure in front of a user."""
-    failures = _failure_parameters(function)
+    failures = _failure_names(function)
     if not failures:
         return []
     offenders: list[str] = []
@@ -367,12 +382,22 @@ def _raw_failure_offenders(function: ast.FunctionDef) -> list[str]:
     return offenders
 
 
-def test_no_error_renderer_prints_a_typed_failures_own_message() -> None:
-    """Neither the archived-run nor the Evaluation failure screen prints it.
+_FAILURE_SCREENS = frozenset(
+    {
+        "_render_catalog_unavailable",
+        "_render_focused_error",
+        "_render_evaluation_unavailable",
+    }
+)
 
-    Stated as a property of every function that accepts a ``GreenMachineError``
-    rather than as a check on two function names, so a third failure screen
-    added later is covered the day it is written.
+
+def test_no_error_renderer_prints_a_typed_failures_own_message() -> None:
+    """No app-level typed-error renderer or handler prints it.
+
+    Stated as a property of every function that *holds* a ``GreenMachineError``
+    rather than as a check on named functions, so a fourth failure screen added
+    later is covered the day it is written — which is exactly how the catalog
+    screen arrived already covered.
     """
     tree = parse_file(APP_PATH)
     offenders: dict[str, list[str]] = {}
@@ -383,6 +408,26 @@ def test_no_error_renderer_prints_a_typed_failures_own_message() -> None:
                 offenders[node.name] = found
 
     assert offenders == {}, f"a typed failure must never be rendered raw: {offenders}"
+
+
+def test_the_guard_actually_inspects_every_failure_screen() -> None:
+    """Coverage, not silence.
+
+    ``offenders == {}`` also holds when the guard never looked. This asserts it
+    recognises a typed failure inside each of the three screens, so a clean
+    result above means "inspected and clean" rather than "skipped".
+    """
+    tree = parse_file(APP_PATH)
+    inspected = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and _failure_names(node)
+    }
+
+    missing = _FAILURE_SCREENS - inspected
+    assert missing == set(), f"the guard does not see these screens at all: {missing}"
+    # And the composition root's own handlers, which bind failures via `except`.
+    assert "main" in inspected
 
 
 @pytest.mark.parametrize(
@@ -410,6 +455,25 @@ def test_meta_the_guard_catches_the_shape_it_was_written_for(label: str, body: s
     assert _raw_failure_offenders(function), label
 
 
+def test_meta_the_guard_catches_a_failure_bound_by_an_except_clause() -> None:
+    """A handler that renders its own caught error is the same defect.
+
+    The composition root binds failures this way, so tracking only parameters
+    would leave `main()` free to print one.
+    """
+    source = (
+        "def main() -> None:\n"
+        "    try:\n"
+        "        run()\n"
+        "    except GreenMachineError as failure:\n"
+        "        st.error(failure.message)\n"
+    )
+    function = ast.parse(source).body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    assert _raw_failure_offenders(function)
+
+
 def test_meta_the_guard_allows_the_safe_shape() -> None:
     """And it must not flag the correction, or it would just be noise."""
     source = (
@@ -422,16 +486,80 @@ def test_meta_the_guard_allows_the_safe_shape() -> None:
     assert _raw_failure_offenders(function) == []
 
 
-def test_both_failure_screens_exist_and_route_through_the_safe_adapter() -> None:
-    """The guard above is only meaningful if both renderers are still there."""
+def test_meta_the_guard_allows_handing_a_failure_to_another_renderer() -> None:
+    """Passing the typed object on is required, not forbidden.
+
+    The Product Owner's rule is that the original error is preserved and not
+    mutated; the composition root must therefore be free to hand it to the right
+    screen.
+    """
+    source = (
+        "def main() -> None:\n"
+        "    try:\n"
+        "        run()\n"
+        "    except GreenMachineError as failure:\n"
+        "        _render_catalog_unavailable(failure)\n"
+    )
+    function = ast.parse(source).body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    assert _raw_failure_offenders(function) == []
+
+
+def _module_constant(tree: ast.Module, name: str) -> object:
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            return ast.literal_eval(node.value)
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and node.value is not None
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"{name} is not a module-level constant in streamlit_app.py")
+
+
+def test_the_three_failure_surfaces_stay_semantically_distinct() -> None:
+    """Catalog, archived run, and evaluation fail at different moments.
+
+    A reviewer needs to know which. The catalog wording in particular must not
+    describe a *selected* run, because when it fires nothing has been selected.
+    """
+    tree = parse_file(APP_PATH)
+    generic = {
+        surface: _module_constant(tree, name)
+        for surface, name in (
+            ("catalog", "_GENERIC_CATALOG_WORDING"),
+            ("archived run", "_GENERIC_ARCHIVED_RUN_WORDING"),
+            ("evaluation", "_GENERIC_FAILURE_WORDING"),
+        )
+    }
+    assert len(set(generic.values())) == 3, f"wording has collapsed together: {generic}"
+
+    # The same error category must read differently on different surfaces --
+    # that is the whole reason there are three tables rather than one.
+    catalog_table = _module_constant(tree, "_SAFE_CATALOG_WORDING")
+    archived_table = _module_constant(tree, "_SAFE_ARCHIVED_RUN_WORDING")
+    assert isinstance(catalog_table, dict)
+    assert isinstance(archived_table, dict)
+    shared = set(catalog_table) & set(archived_table)
+    assert shared, "the two surfaces should share at least DashboardLoadError"
+    for category in shared:
+        assert catalog_table[category] != archived_table[category], category
+
+
+def test_all_three_failure_screens_exist_and_route_through_the_safe_adapter() -> None:
+    """The guard above is only meaningful if the renderers are still there."""
     tree = parse_file(APP_PATH)
     renderers = {
         node.name: node
         for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-        and node.name in {"_render_focused_error", "_render_evaluation_unavailable"}
+        if isinstance(node, ast.FunctionDef) and node.name in _FAILURE_SCREENS
     }
-    assert set(renderers) == {"_render_focused_error", "_render_evaluation_unavailable"}
+    assert set(renderers) == set(_FAILURE_SCREENS)
 
     for name, function in renderers.items():
         body = ast.unparse(function)

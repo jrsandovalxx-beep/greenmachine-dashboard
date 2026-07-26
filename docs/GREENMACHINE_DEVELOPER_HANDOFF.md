@@ -4,7 +4,7 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-25 (revision 11), on
+Last updated: 2026-07-25 (revision 12), on
 `feature/gm041-5-stabilization-ux-review`. **GM-041 is APPROVED AND MERGED**
 (`origin/main` at `28727fa`). **GM-041.5 — Stabilization & UX Review — is
 COMPLETE and awaiting review**: the engine's evaluation is now visible in the
@@ -388,7 +388,7 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,665 tests green (rev 11) across
+`streamlit_app.py`; evidence ships in-repo. 3,697 tests green (rev 12) across
 hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
@@ -731,7 +731,7 @@ rerun, which avoids a second cache whose key could omit something.
 
 Twenty ordered audit entries per profile. **All synthetic demonstrations.**
 
-**Verified:** 3,665 passed / 5 skipped across hash seeds 0/1/42; all gates
+**Verified:** 3,697 passed / 6 skipped across hash seeds 0/1/42; all gates
 clean; both evidence bundles replay byte-identically; the committed sample JSON
 and Markdown are byte-identical at `960a0106…` and `af804228…`.
 
@@ -940,6 +940,101 @@ running the deterministic engine. It now reads *"No live capture. Engine
 evaluations use a synthetic, non-production configuration."* — accurate, and
 still free of recommendation or decision language.
 
+### 12h. Catalog discovery failure safety (rev 12)
+
+§12e made the *Evaluation* failure path safe; §12g made the *archived-run* path
+safe. This is the third and earliest surface, and the one neither of those could
+protect.
+
+**The defect.** `main()` called `discover_runs(EVIDENCE_ROOT)` **before** any
+`try/except GreenMachineError`. Discovery performs three fallible filesystem
+operations — `root.resolve()`, `root.iterdir()`, and `child.resolve()` — and
+converted none of them. An unreadable evidence root, or one that vanished
+between the directory check and the enumeration, raised a raw `OSError` naming
+the root's absolute path:
+
+```
+PermissionError
+[Errno 13] Permission denied: '/very/private/secret/evidence'
+```
+
+**Why §12g could not cover it.** `load_verified_run` types the failures of *one
+selected run*. Discovery is what produces the list to select **from**, so it
+runs strictly earlier; at that moment there is no run, no handle, and no
+run-level boundary between the exception and the screen. A boundary can only
+protect what happens inside it.
+
+**Correction 1 — a typed discovery boundary.** `discover_runs` is now a thin
+outer boundary around `_discover_runs`, in the same shape as `load_verified_run`:
+
+```python
+try:
+    return _discover_runs(evidence_root)
+except GreenMachineError:
+    raise
+except OSError as failure:
+    raise DashboardLoadError(
+        "the approved archived-run catalog could not be read",
+        ErrorContext(subject="archived-run-catalog"),
+    ) from failure
+```
+
+`except OSError`, never `except Exception`; a `GreenMachineError` raised inside
+is re-raised unchanged; the message names no path, username, or drive; the
+original stays on `__cause__`. Discovery remains deterministic, sorted, and
+path-confined, and the symlink-escape rule is untouched. A genuinely absent or
+non-directory root is **not** a failure and still returns an empty tuple. When
+discovery does fail, nothing partial is returned — the exception replaces the
+catalog rather than truncating it, because a short-but-plausible list is the
+worst possible outcome: it looks like an answer.
+
+**Correction 2 — a dedicated catalog screen.** `_render_catalog_unavailable`
+shows *Archived-run catalog unavailable*, the stable `error_type`, and one fixed
+safe sentence. It is deliberately **not** `_render_focused_error`: that screen
+names a selected run, and at catalog time no run has been selected, so blaming
+one would be false. It offers no selector and no partial dashboard, and renders
+neither `failure.message`, nor `failure.context`, nor `str`/`repr` of the
+failure, nor the configured evidence root, nor a traceback. It tells the user
+that no archived run can be displayed until the catalog becomes available.
+
+The three surfaces share one `_safe_wording` lookup and keep three distinct
+tables, and an architecture test now asserts the three generic sentences stay
+distinct and that a shared category (`DashboardLoadError`) reads differently on
+the catalog and archived-run surfaces.
+
+**Correction 3 — no fallible path resolution at import.** `EVIDENCE_ROOT` was
+built with `Path(_EVIDENCE_OVERRIDE).resolve()` while `streamlit_app.py` was
+importing — before any typed presentation boundary exists, so a resolution
+failure there would surface as a traceback naming the configured root. The
+override is now stored unresolved, and `discover_runs` performs the resolution
+inside its own boundary. The override's raw value never reaches the screen.
+
+**Regressions.** `tests/unit/reporting/test_discovery_failures.py` injects a
+failure at each of the three fallible operations, asserts the typed conversion,
+`__cause__`, no path in message or context, no partial catalog, and that the
+absent/non-directory/empty-root cases still return `()`. The injected root runs
+the **whole** discovery algorithm — including the real confinement check, via
+`__fspath__` — so the control case genuinely exercises the seam rather than
+bypassing it.
+
+`tests/integration/reporting/test_catalog_failure_states.py` covers the renderer
+by patching the public boundary before the app imports it, and the conversion end
+to end by configuring a real evidence root and making `Path.iterdir` raise for
+that one directory — so `_discover_runs` executes its own `resolve()`,
+`is_dir()`, and `iterdir()` and fails at the real call site. Two anti-vacuity
+controls: the patched seam still brings the console up normally with no failure
+injected, and the same temporary root without an injected failure produces the
+ordinary no-runs message rather than the catalog error.
+
+**Structural guard, extended.** The AST guard tracked only parameters annotated
+`GreenMachineError`. It now also tracks names bound by
+`except GreenMachineError as ...`, which is how the composition root holds one —
+so `main()` itself is covered. A new test asserts the guard actually *inspects*
+all three screens plus `main`, because `offenders == {}` also holds when the
+guard never looked. The catalog screen needed no special case: it was covered
+the moment it was written, which was the point of stating the guard as a
+property.
+
 ---
 
 ## 13. FUTURE ROADMAP
@@ -1010,7 +1105,7 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,665 passed as of rev 11, plus
+3. `python -m pytest -q` — expect fully green (3,697 passed as of rev 12, plus
    five Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
@@ -1067,6 +1162,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 12 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 catalog discovery failure safety** (§12h). `main()` called `discover_runs(EVIDENCE_ROOT)` **before** any `try/except GreenMachineError`, and discovery converted none of its three fallible filesystem operations (`root.resolve()`, `root.iterdir()`, `child.resolve()`) — so an unreadable evidence root, or one vanishing between the directory check and the enumeration, escaped as a raw `OSError` naming the root's absolute path. §12g could not cover this: `load_verified_run` types the failures of one *selected* run, and discovery is what produces the list to select from, so it runs strictly earlier with no run-level boundary in between. `discover_runs` is now a thin typed boundary around `_discover_runs` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, names no path, and preserves `__cause__`; discovery stays deterministic, sorted, and path-confined, the symlink-escape rule is untouched, an absent or non-directory root still returns `()`, and no partial catalog is ever returned. A dedicated `_render_catalog_unavailable` screen shows *Archived-run catalog unavailable*, the stable category, and one fixed safe sentence — deliberately not the archived-run screen, which names a selected run that does not exist yet — with no selector, no partial dashboard, and no message, context, exception string, evidence root, or traceback. `EVIDENCE_ROOT` no longer calls `.resolve()` at import, where a failure would precede every typed boundary; the override is stored unresolved and resolved inside `discover_runs`. New coverage: a discovery unit suite injecting at all three fallible operations (with a seam that runs the whole algorithm, including the real confinement check, so its control is not vacuous) and an AppTest suite covering the renderer and the real end-to-end conversion, plus two anti-vacuity controls. The AST guard now also tracks failures bound by `except GreenMachineError as ...`, so `main()` is covered, and a new test asserts the guard genuinely inspects all three screens rather than passing by silence. Verified: 3,697 passed / 6 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 11 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 archived-run failure safety** (§12g). Two independent defects on the archived-run error path, both real. (1) **Raw-message disclosure.** `_render_focused_error()` printed `failure.message`, so a path-bearing `DashboardLoadError` rendered the full private filesystem path — the same class of defect §12e fixed for the Evaluation screen, in the other renderer. A safe archived-run presentation adapter now shows the fixed heading, the selected run **name**, the stable `error_type`, and one fixed safe sentence from a nine-category table with a generic fallback; never the message, the context file path, an exception string, raw `OSError` prose, an absolute path, a username, or a traceback. Both adapters now share one `_safe_wording` lookup, so the fallback rule exists in exactly one place. (2) **Uncaught `OSError`.** A `PermissionError` or a racing `FileNotFoundError` from bundle reading, replay verification, a snapshot read, or a report read escaped the loader as a raw traceback, because `OSError` is not a `GreenMachineError` and the app catches nothing wider. `load_verified_run` is now a thin boundary around `_build_verified_run` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, carries the run name and no path, and preserves `__cause__`; `except Exception` is not used and no integrity verdict changes. New regressions: a loader unit suite injecting both `OSError` kinds at all four read boundaries with sensitive-looking paths (plus a control proving the seam still loads a healthy run), and an AppTest suite driving both the renderer and the real end-to-end conversion while proving a second approved run stays usable. An AST anti-regression guard now forbids **any** function taking a `GreenMachineError` from rendering it raw, with meta-tests proving the guard catches the exact prior shape. The hub's stale *No automated scoring* claim is corrected. Verified: 3,665 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration source digest and semantic hash unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 10 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 review corrections.** (1) **Manual Review state loss fixed** (§12d). Streamlit discards widget-owned session keys when their widgets are not rendered, and the worksheet used widget keys as its only storage — so navigating anywhere destroyed the reviewer's scores, rationales, notes, timestamp, and export bytes. Rev 9 shipped a *parity* test asserting the evaluation screen behaved like Overview, which documented the defect instead of guarding the requirement; that test is deleted. The correction introduces a durable `review_state::<run>::<field>` namespace that no widget owns, hydrated into transient `review_widget::` keys on render and written back by `on_change`, with `ManualReview` and both exports built from the durable record alone and every run namespaced separately. Fourteen new AppTest cases drive **real widget interactions**, walk the hub plus Overview, Data Audit, and both evaluation profiles, and assert every visible value and both export payloads are byte-identical on return, plus per-run isolation and restoration. (2) **Absolute-path disclosure fixed** (§12e). The failure renderer printed `failure.message`, which for a configuration failure names the absolute path it tried to read. A deterministic adapter now maps the stable `error_type` to one fixed user-safe sentence across ten categories with a safe generic fallback; the screen never renders the message, the context file path, or a traceback, and the typed error is left unmutated. Tests assert neither a Windows-style nor a POSIX-style sensitive path nor any identifying segment appears in rendered text, including the unreadable-configuration case, injected rather than depending on filesystem permissions so it stays cross-platform. (3) **Terminal branches covered** (§12f): `NotEvaluableGradeResult` and `ScoringInputError`/`ScoringConfigError`/`ScoringError` are exercised by patching the public scoring boundary before the app imports it — a test seam, not a production switch. (4) Page title and sidebar caption no longer describe the console as manual-review-only; `VerifiedRun` and `load_verified_run` added to `dashboard_loader.__all__`. Verified: 3,623 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 9 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 Stabilization & UX Review.** GM-041 was approved and merged (`origin/main` `28727fa`); this branch starts there. Added the **Engine Evaluation** screen as the sixth hub destination, rendering the GM-041 engine's six outputs — Total Score, Tier, Component Breakdown, Audit Trail, Warnings, Fallbacks — for either window profile of an approved archived run, with evaluated and not-evaluable rendering as structurally distinct states (a not-evaluable result never becomes zero or tier D). Added `reporting.load_verified_run` returning a frozen `VerifiedRun` (view models plus both frozen snapshots) from exactly one replay pass with each snapshot deserialized once, validating profile placement, distinct identities, and identity coherence with the dashboard header; `load_dashboard` delegates to it unchanged. This is what keeps `reporting` free of `scoring` and `config` imports while the composition root scores — proven by new architecture guards. Relocated the disclaimed synthetic configuration **byte-for-byte** to `config/nonproduction/gm041_engine_synthetic.yaml` with no second copy, verified identical by source digest, semantic `config_hash`, and version identifier (§12b); the GM-003 location guards now permit that directory and additionally require every configuration there to announce itself non-production. Configuration is loaded lazily on entering the screen, so a missing or invalid file renders a focused *Evaluation unavailable* error with the typed category — never *Archived run could not be verified* — with no partial result, no traceback, no absolute path, and every other screen still working. Documentation updated across README, `STREAMLIT_PROTOTYPE.md`, and the CHANGELOG to state that evaluations are visible, the configuration is synthetic and non-production, live capture remains command-line only, the dashboard displays already-published bundles, no production configuration exists while Q11–Q16 are open, and no automated recommendation or decision output exists. Recorded a pre-existing UX finding in §12d (Streamlit resets unrendered widget state, so worksheet entries do not survive navigation through *any* screen) and asserted parity rather than pinning a guarantee the app never made. Verified: 3,581 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically, committed sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`. No frozen contract changed. |

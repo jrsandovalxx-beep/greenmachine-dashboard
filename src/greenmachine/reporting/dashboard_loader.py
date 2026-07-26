@@ -116,7 +116,38 @@ def discover_runs(evidence_root: Path) -> tuple[RunHandle, ...]:
     rejected), and free of working-directory assumptions (the caller passes
     an absolute root). A directory qualifies by carrying a ``manifest.json``;
     adding another approved run requires no dashboard-code change.
+
+    **Every failure leaves here typed**, for the same reason
+    :func:`load_verified_run` converts its own — but earlier in the sequence,
+    and that difference is the whole point. Discovery runs *before* a run has
+    been selected, so the run-level boundary cannot protect it: an unreadable
+    evidence root, or one that vanishes between the directory check and the
+    enumeration, raises an ``OSError`` naming the root's absolute path with no
+    typed boundary anywhere between it and the screen.
+
+    The guard is ``except OSError``, never ``except Exception`` (ADR-0007); a
+    ``GreenMachineError`` raised inside is re-raised unchanged; the new error's
+    message names no path, no username, and no drive; and the original exception
+    stays attached as ``__cause__`` so engineering diagnosis loses nothing.
+
+    A genuinely absent or non-directory evidence root is **not** a failure and
+    is unchanged: it still returns an empty tuple. When discovery does fail,
+    nothing partial is returned — the exception replaces the catalog rather than
+    truncating it.
     """
+    try:
+        return _discover_runs(evidence_root)
+    except GreenMachineError:
+        raise
+    except OSError as failure:
+        raise DashboardLoadError(
+            "the approved archived-run catalog could not be read",
+            ErrorContext(subject="archived-run-catalog"),
+        ) from failure
+
+
+def _discover_runs(evidence_root: Path) -> tuple[RunHandle, ...]:
+    """The enumeration itself. See :func:`discover_runs`."""
     root = evidence_root.resolve()
     if not root.is_dir():
         return ()
