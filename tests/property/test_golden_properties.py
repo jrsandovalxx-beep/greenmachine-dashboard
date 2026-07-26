@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from tests.golden.runner import (
     CASES_ROOT,
@@ -46,14 +46,16 @@ def test_ci_profile_is_registered_with_deterministic_settings() -> None:
     assert profile.database is None, "examples must be generated in memory only"
     assert profile.deadline is None, "no wall-clock dependence in pass/fail decisions"
     assert profile.max_examples == 50
-    # Pinned explicitly, and to exactly one value. Hypothesis adds
-    # HealthCheck.too_slow by itself on a hosted runner, so an unpinned profile
-    # would differ between a developer machine and CI; the registration declares
-    # the same suppression so the effective settings are identical everywhere.
-    # This must stay an equality against one tuple -- accepting either shape
-    # would re-admit the environment dependence it exists to rule out.
-    assert tuple(profile.suppress_health_check) == (HealthCheck.too_slow,), (
-        "exactly HealthCheck.too_slow is suppressed, in every environment"
+    # Pinned explicitly, and pinned EMPTY. Hypothesis fills an unspecified
+    # setting from the active built-in profile, and on a hosted runner that
+    # profile suppresses HealthCheck.too_slow -- so leaving this unset made the
+    # effective value depend on the environment. The explicit empty tuple blocks
+    # that inheritance and states the accepted ADR-0008 policy: GreenMachine
+    # suppresses no health check anywhere. This must stay an equality against
+    # one tuple; accepting either shape would re-admit the environment
+    # dependence it exists to rule out.
+    assert tuple(profile.suppress_health_check) == (), (
+        "every Hypothesis health check stays active, in every environment"
     )
 
 
