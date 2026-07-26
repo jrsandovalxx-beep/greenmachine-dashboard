@@ -4,11 +4,15 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-26 (revision 14), on
+Last updated: 2026-07-26 (revision 15), on
 `feature/gm041-5-hf2-hypothesis-health-policy`. **GM-041, GM-041.5, and
-GM-041.5-HF1 are all APPROVED AND MERGED** — HF1 landed as PR #5 and
-`origin/main` is at `c2653bb`. **GM-041.5-HF2 — deterministic Hypothesis
-health-check policy — is COMPLETE and awaiting review** (§12j): HF1 correctly
+GM-041.5-HF1 are all APPROVED AND MERGED** — GM-041.5 landed as PR #4
+(`48e8443`), HF1 as PR #5 (`c2653bb`), and `origin/main` is at `c2653bb`. The
+Streamlit console **renders the deterministic engine's evaluation** under the
+labelled synthetic non-production configuration; live capture remains
+command-line only. **GM-041.5-HF2 — deterministic Hypothesis health-check
+policy — is COMPLETE, with PR #6 open and awaiting final approval** (§12j): HF1
+correctly
 pinned `suppress_health_check` to stop the profile inheriting a CI-dependent
 value, but pinned it to `(HealthCheck.too_slow,)`, which contradicts the
 no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`,
@@ -47,11 +51,24 @@ GreenMachine is a deterministic MLB home-run research platform for a single
 Product Owner. For one slate date, one game, and one manually selected hitter
 against the expected starting pitcher, it captures raw provider data,
 normalizes it into provider-neutral records, freezes the result into immutable
-`InputSnapshot`s (one per window profile), and presents everything for manual
-review in a Streamlit console. The grading model scores 12 points across five
-categories and **is implemented** (GM-041) as a pure, config-driven engine. The
-Streamlit prototype does not yet render that engine's evaluation; surfacing it
-belongs to GM-041.5.
+`InputSnapshot`s (one per window profile), and presents everything for review in
+a Streamlit research console. The grading model scores 12 points across five
+categories and **is implemented** (GM-041) as a pure, config-driven engine.
+
+**The console renders that engine's evaluation** (GM-041.5, merged): an *Engine
+Evaluation* destination scores either window profile of an approved archived run
+and shows the six outputs — Total Score, Tier, Component Breakdown, Audit Trail,
+Warnings, and Fallbacks. Three things bound what that means today:
+
+- every evaluation runs under the **clearly labelled synthetic, non-production
+  configuration**, disclaimed on the screen above the result, beside the total
+  and tier, and again below them;
+- **no approved production model configuration exists** while Q11–Q16 remain
+  open Product Owner decisions, so no displayed score evaluates a hitter under
+  an approved model;
+- **live capture remains command-line only** (`scripts/run_gm040_real_slice.py`);
+  the console is read-only over already-approved archived runs and never
+  captures.
 
 Core philosophy (each point is architecture-enforced by tests, not aspiration):
 
@@ -109,7 +126,9 @@ reviewed and **FROZEN** unless marked otherwise.
 | GM-040 | Delivered, pending independent review | Operator workflow over the unchanged pipeline + live Ohtani evidence |
 | GM-040-HF1 | Delivered hotfix | `-e .` in requirements.txt so Community Cloud installs the project |
 | GM-041 | **APPROVED and MERGED** into `origin/main` (`28727fa`) | First production deterministic grading engine (pure, config-driven) + betting-classification removal |
-| GM-041.5 | **COMPLETE, awaiting review** (this branch; see §12a) | Engine evaluation surfaced in the Streamlit console + UX stabilization |
+| GM-041.5 | **APPROVED and MERGED** as PR #4, merge commit `48e8443` (see §12a) | Engine evaluation surfaced in the Streamlit console + UX stabilization |
+| GM-041.5-HF1 | **APPROVED and MERGED** as PR #5, merge commit `c2653bb` (see §12i) | CI stability and landing-page wording |
+| GM-041.5-HF2 | **COMPLETE — PR #6 open, awaiting final approval** (this branch; see §12j) | Restores the accepted no-suppression Hypothesis health-check policy |
 
 **GM-020 — ingestion vertical slice.** Objective: one real game/hitter/pitcher
 from live providers to two frozen snapshots with deterministic replay.
@@ -404,9 +423,9 @@ hash seeds 0/1/42; ruff + mypy --strict clean.
   metrics (incl. any Whiff Rate surface) to a dedicated future tab/tag;
   no bullpen capture exists in manifest v1.
 - **Record Book / outcomes / any database** — now the approved **GM-042**
-  (§13), but blocked behind GM-041 completion and a durable-storage ruling
-  (ports + in-memory adapters are ready); nothing to record until grading +
-  outcome ingestion exist.
+  (§13). Grading exists (GM-041, merged), so the remaining prerequisites are a
+  durable-storage ruling (ports + in-memory adapters are ready) and outcome
+  ingestion; nothing can be recorded until the latter exists.
 - **Dashboard redesign** — waits on PO usability notes from the prototype.
 - **Weather / park expansion** — no approved source (components stay missing).
 - **Betting classifications and betting advice — permanently out, not
@@ -679,10 +698,12 @@ trail. The four components the GM-020 pipeline cannot yet supply —
 `attack_angle_quality` fallback provenance is surfaced. **These numbers are
 demonstration only and say nothing about the hitter.**
 
-## 12a. CURRENT MILESTONE — GM-041.5 — **COMPLETE, AWAITING REVIEW**
+## 12a. DELIVERED MILESTONE — GM-041.5 — **APPROVED AND MERGED**
 
 **Branch:** `feature/gm041-5-stabilization-ux-review`, from `origin/main`
-`28727fa`.
+`28727fa`; merged as **PR #4**, merge commit `48e8443`. Two hotfixes followed:
+**HF1** (§12i) merged as PR #5, `c2653bb`; **HF2** (§12j) is complete with PR #6
+open.
 
 **Objective:** surface the GM-041 deterministic engine's evaluation in the
 existing Streamlit console while stabilizing the experience — without turning
@@ -1218,14 +1239,19 @@ rule, threshold, evidence bundle, golden output, configuration content,
 **Agreed ticket sequence (PO, 2026-07-25).** One ticket is active at a time
 (§0); the next is not started until the previous is reviewed and closed.
 
-| Order | Ticket | Scope |
-|---|---|---|
-| 1 | **GM-041** | Production grading engine (this branch, awaiting review) |
-| 2 | **GM-041.5** | Stabilization & UX Review |
-| 3 | **GM-042** | Record Book & Performance Analytics |
+| Order | Ticket | Status | Scope |
+|---|---|---|---|
+| 1 | **GM-041** | complete — merged (`28727fa`) | Production grading engine |
+| 2 | **GM-041.5** | complete — merged as PR #4 (`48e8443`) | Stabilization & UX Review |
+| 2a | **GM-041.5-HF1** | complete — merged as PR #5 (`c2653bb`) | CI stability and landing-page wording |
+| 2b | **GM-041.5-HF2** | **open — PR #6, awaiting final approval** | Hypothesis health-check policy |
+| 3 | **GM-042** | not started | Record Book & Performance Analytics |
 
-GM-041.5 is documented here for sequencing only and **must not be started**
-while GM-041 is open.
+**GM-041.5-HF2 is the currently open correction.** Under the §0 one-ticket rule
+no later ticket begins until it is merged and closed — GM-042 included.
+
+GM-042 remains the next planned product ticket, subject to the prerequisites and
+Product Owner decisions below.
 
 **GM-042 — Record Book & Performance Analytics (APPROVED 2026-07-25).**
 The Record Book measures **GreenMachine's historical performance — not
@@ -1281,8 +1307,8 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,727 passed as of rev 14, plus
-   five Windows platform skips). Any failure is a real regression.
+3. `python -m pytest -q` — expect fully green (3,727 passed as of rev 15, plus
+   six Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
    evidence/gm020_vertical_slice/run_gm040_ohtani` → "replay OK".
@@ -1338,6 +1364,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 15 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **Current-state documentation correction only.** No code, test, or test-policy file changed; no application behaviour, evidence bundle, golden output, configuration content, scoring rule, threshold, or frozen contract changed. The canonical handoff carried current-facing statements that the merged project state had overtaken. (1) **§1 engine visibility**: it said the Streamlit prototype does not yet render the engine's evaluation and that surfacing it belongs to GM-041.5. GM-041.5 is merged and the console does render it, so §1 now states that, together with the three bounds that matter — every evaluation runs under the labelled synthetic non-production configuration, no approved production model configuration exists while Q11–Q16 remain open, and live capture is still command-line only. (2) **§2 milestone table**: GM-041.5 read *COMPLETE, awaiting review*; it is now recorded as merged via PR #4 (`48e8443`), with HF1 merged via PR #5 (`c2653bb`) and HF2 shown separately as complete with PR #6 open. (3) **§13 roadmap**: it showed GM-041 awaiting review and GM-041.5 as not-yet-startable, and §8 called GM-042 blocked behind GM-041 completion. GM-041 and GM-041.5 are complete; the table now carries a status column, names HF2 as the currently open correction under the §0 one-ticket rule, and keeps GM-042 as the next planned product ticket subject to its unchanged prerequisites. (4) **§14 Quick Start**: the expected result said five Windows platform skips; it is six — the sixth is the symlink-confinement case added with the discovery suite in rev 12. The authoritative current result is 3,727 passed / 6 skipped. Historical revision entries were **not** edited: each accurately described the state at the time it was written, and the counts inside them stand. A narrowly scoped currency test now guards the overview/status/roadmap/Quick Start sections against these specific regressions without touching the revision history. |
 | 14 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **GM-041.5-HF2 — deterministic Hypothesis health-check policy** (§12j). Supersedes one decision in §12i and nothing else. HF1 correctly diagnosed that an unspecified `suppress_health_check` is inherited from the active built-in profile — which suppresses `HealthCheck.too_slow` on a hosted runner — and correctly concluded the field must be pinned; it then pinned it to `(HealthCheck.too_slow,)`, adopting the environment's value as the project's own. That contradicted the no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`, and ADR-0008, leaving the repository asserting two policies at once with no test noticing. The registration now passes `suppress_health_check=()` — **explicit**, so nothing is inherited, and **empty**, so the value is the accepted policy; the two properties are independent and HF1 achieved only the first. The test asserts exactly `()`, still as a single equality. No other Hypothesis setting changed and the fixed seed 20260724 still arrives through addopts. `HealthCheck.too_slow` does **not** fire under the restored policy in any environment; no timing limit was raised and no test skipped, xfailed, or weakened. New coverage: a **subprocess** probe proving the profile is identical under `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true` (in-process `os.environ` edits prove nothing, because Hypothesis decides CI-ness at import), comparing the three dumps to each other as well as to the declared values, plus a meta-test confirming an unspecified profile still varies; and a documentation-integrity guard that reads the registration from the AST and compares every claimed value across all four sources semantically, so they may be reworded but cannot disagree. HF1's landing-page wording work is untouched. Verified: 3,727 passed / 6 skipped across hash seeds 0/1/42 with `CI` unset and again with `CI=true`, plus a `GITHUB_ACTIONS=true` run; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence, goldens, `.gitattributes`, and the nested tree unchanged. No frozen contract changed. |
 | 13 | 2026-07-26 | this commit, on `feature/gm041-5-hf1-ci-and-hub-wording` | **GM-041.5-HF1 — CI stability and landing-page wording** (§12i). A post-merge hotfix on the merged GM-041.5 (PR #4, `main` at `48e8443`). (1) **GitHub Actions was red on every commit and had been for five deliveries.** The `greenmachine-ci` Hypothesis profile did not pin `suppress_health_check`, and Hypothesis adds `HealthCheck.too_slow` itself when it detects a hosted runner — so a *determinism* profile had environment-dependent effective settings, and `test_ci_profile_is_registered_with_deterministic_settings` passed locally while failing on every hosted run. The registration now pins `suppress_health_check=(HealthCheck.too_slow,)` explicitly, every other field unchanged, and the test asserts that single tuple; it was deliberately **not** widened to accept either shape, which would have re-admitted the dependence it exists to rule out. Local verification now includes a `CI=true` pass, since that is the only way this class of defect is visible from a developer machine. (2) **The landing hub named one screen rather than the console**: `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0` became `GREENMACHINE RESEARCH CONSOLE · v0.2.0`, wording only, with the original artwork, layout, and CSS untouched and no recommendation or decision language introduced; the module docstring and `docs/STREAMLIT_PROTOTYPE.md` title were corrected the same way, while the historical GM-030 references were left alone as accurate. A focused regression asserts the new subtitle, the absence of the old one, all six destinations, and `ENGINE EVALUATION`. Verified six ways — hash seeds 0/1/42 with `CI` unset and again with `CI=true`, identical outcome in all six; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence and goldens unchanged. No frozen contract changed. |
 | 12 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 catalog discovery failure safety** (§12h). `main()` called `discover_runs(EVIDENCE_ROOT)` **before** any `try/except GreenMachineError`, and discovery converted none of its three fallible filesystem operations (`root.resolve()`, `root.iterdir()`, `child.resolve()`) — so an unreadable evidence root, or one vanishing between the directory check and the enumeration, escaped as a raw `OSError` naming the root's absolute path. §12g could not cover this: `load_verified_run` types the failures of one *selected* run, and discovery is what produces the list to select from, so it runs strictly earlier with no run-level boundary in between. `discover_runs` is now a thin typed boundary around `_discover_runs` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, names no path, and preserves `__cause__`; discovery stays deterministic, sorted, and path-confined, the symlink-escape rule is untouched, an absent or non-directory root still returns `()`, and no partial catalog is ever returned. A dedicated `_render_catalog_unavailable` screen shows *Archived-run catalog unavailable*, the stable category, and one fixed safe sentence — deliberately not the archived-run screen, which names a selected run that does not exist yet — with no selector, no partial dashboard, and no message, context, exception string, evidence root, or traceback. `EVIDENCE_ROOT` no longer calls `.resolve()` at import, where a failure would precede every typed boundary; the override is stored unresolved and resolved inside `discover_runs`. New coverage: a discovery unit suite injecting at all three fallible operations (with a seam that runs the whole algorithm, including the real confinement check, so its control is not vacuous) and an AppTest suite covering the renderer and the real end-to-end conversion, plus two anti-vacuity controls. The AST guard now also tracks failures bound by `except GreenMachineError as ...`, so `main()` is covered, and a new test asserts the guard genuinely inspects all three screens rather than passing by silence. Verified: 3,697 passed / 6 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
