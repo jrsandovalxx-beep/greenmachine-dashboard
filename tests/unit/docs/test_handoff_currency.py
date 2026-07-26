@@ -155,7 +155,16 @@ def _milestone_row(ticket: str) -> str:
     return matched[0]
 
 
-@pytest.mark.parametrize("ticket", ("GM-041", "GM-041.5"), ids=("GM-041", "GM-041.5"))
+_MERGED_TICKETS = (
+    "GM-041",
+    "GM-041.5",
+    "GM-041.5-HF1",
+    "GM-041.5-HF2",
+    "GM-040 Angels validation",
+)
+
+
+@pytest.mark.parametrize("ticket", _MERGED_TICKETS, ids=_MERGED_TICKETS)
 def test_the_milestone_table_marks_the_delivered_tickets_merged(ticket: str) -> None:
     """Each delivered ticket's OWN row says merged.
 
@@ -190,23 +199,45 @@ def test_no_current_facing_section_heading_calls_merged_work_awaiting_review() -
     GM-041.5 had merged; the milestone-table guard above did not see it because
     it lives in a different section. Every current-facing heading is checked.
     """
-    merged = ("GM-041", "GM-041.5")
-    offenders = []
-    for heading in re.findall(r"^##+ .*$", _current_facing(), re.MULTILINE):
-        if "AWAITING REVIEW" not in heading.upper():
-            continue
-        if any(ticket in heading for ticket in merged) and "HF2" not in heading:
-            offenders.append(heading.strip())
+    offenders = [
+        heading.strip()
+        for heading in re.findall(r"^##+ .*$", _current_facing(), re.MULTILINE)
+        if "AWAITING REVIEW" in heading.upper()
+    ]
 
     assert offenders == [], f"merged work still headed as awaiting review: {offenders}"
 
 
-def test_the_open_correction_is_named_and_separated_from_the_merged_work() -> None:
+def test_no_current_facing_text_says_hf2_or_the_validation_awaits_review() -> None:
+    """Neither HF2 nor the Angels validation may still be described as pending.
+
+    Both landed: HF2 as PR #6, the Angels validation as PR #7. The banned
+    phrases below are the specific wordings those two carried while open, not a
+    general ban on the words — GM-040's own row legitimately still reads
+    "Delivered, pending independent review", which is a statement about that
+    ticket and not about either of these. The revision history is excluded, so
+    entries that accurately described an earlier open state are untouched.
+    """
+    current = _flat(_current_facing())
+
+    for stale in ("PR #6 open", "awaiting final approval", "currently open correction"):
+        assert stale.lower() not in current.lower(), f"stale current-facing status: {stale!r}"
+
+
+@pytest.mark.parametrize(
+    ("label", "pull_request"),
+    (("HF2", "PR #6"), ("Angels validation", "PR #7")),
+    ids=("PR #6", "PR #7"),
+)
+def test_the_milestone_table_records_both_recent_pull_requests_as_merged(
+    label: str, pull_request: str
+) -> None:
     table = _flat(_section(r"2\. "))
 
-    assert "GM-041.5-HF1" in table
-    assert "GM-041.5-HF2" in table
-    assert "PR #6" in table
+    assert pull_request in table, f"{label} is not recorded in the milestone table"
+    index = table.index(pull_request)
+    window = table[max(0, index - 160) : index + 80].upper()
+    assert "MERGED" in window, f"{pull_request} is not shown as merged: {window}"
 
 
 # --------------------------------------------------------------------------
@@ -222,17 +253,20 @@ def test_the_roadmap_shows_the_delivered_tickets_complete() -> None:
     assert roadmap.count("complete") >= 2
 
 
-def test_the_roadmap_names_hf2_as_the_currently_open_correction() -> None:
+def test_the_roadmap_shows_no_ticket_currently_open() -> None:
+    """Everything through the Angels validation merged; nothing is in flight."""
     roadmap = _flat(_section(r"13\. FUTURE ROADMAP"))
 
-    assert "GM-041.5-HF2 is the currently open correction" in roadmap
-    assert "no later ticket begins until it is merged" in roadmap
+    assert "No ticket is currently open" in roadmap
+    assert "currently open correction" not in roadmap
 
 
-def test_the_roadmap_keeps_gm042_as_the_next_planned_product_ticket() -> None:
+def test_the_roadmap_shows_gm042_not_started_and_next_eligible() -> None:
     roadmap = _flat(_section(r"13\. FUTURE ROADMAP"))
 
-    assert "GM-042 remains the next planned product ticket" in roadmap
+    assert "GM-042" in roadmap
+    assert "not started" in roadmap
+    assert "next eligible" in roadmap
 
 
 # --------------------------------------------------------------------------
@@ -248,9 +282,45 @@ def test_quick_start_reports_six_windows_platform_skips() -> None:
     assert "five Windows platform skips" not in quick_start
 
 
+# --------------------------------------------------------------------------
+# 5. The evidence inventory
+# --------------------------------------------------------------------------
+
+EVIDENCE_ROOT = REPO_ROOT / "evidence" / "gm020_vertical_slice"
+
+
+def _archived_runs() -> list[str]:
+    """The runs actually on disk, by the same rule `discover_runs` applies."""
+    return sorted(
+        path.name for path in EVIDENCE_ROOT.iterdir() if (path / "manifest.json").is_file()
+    )
+
+
+def test_the_handoff_inventory_matches_the_runs_on_disk() -> None:
+    """The document must name the bundles that exist, not a stale subset.
+
+    Checked against the filesystem rather than a hard-coded list, so adding an
+    approved run fails here until the handoff records it — which is the point,
+    and is how the two-run inventory survived nine new bundles unnoticed.
+    """
+    runs = _archived_runs()
+    current = _current_facing()
+
+    assert len(runs) == 11, f"expected eleven archived runs on disk, found {len(runs)}: {runs}"
+    missing = [run for run in runs if run not in current]
+    assert missing == [], f"archived runs absent from the current-facing handoff: {missing}"
+
+
+def test_the_handoff_states_the_eleven_run_inventory() -> None:
+    current = _flat(_current_facing())
+
+    assert "eleven approved archived runs" in current
+    assert "eleven bundles" in current
+
+
 # The suite size this revision actually produces. Stated once here so the two
 # current-facing places that quote it cannot drift apart, or away from reality.
-EXPECTED_PASS_COUNT = "3,746"
+EXPECTED_PASS_COUNT = "3,798"
 
 
 def test_the_current_expected_pass_count_matches_the_recorded_result() -> None:
