@@ -634,7 +634,40 @@ def load_verified_run(handle: RunHandle) -> VerifiedRun:
     importing ``greenmachine.scoring`` (or ``greenmachine.config``).
 
     Nothing is written, and no snapshot is copied or rebuilt.
+
+    **Every failure leaves here typed.** A run directory is ordinary filesystem
+    state: a file can be unreadable, or can disappear between discovery and the
+    read that wants it. Those arrive as ``OSError`` subclasses from four places —
+    opening the bundle, replay verification, the snapshot reads, and the report
+    reads — and an ``OSError`` escaping this boundary would reach the application
+    as a raw traceback, because the application catches
+    :class:`~greenmachine.common.errors.GreenMachineError` and nothing wider.
+    They are converted here, once, at the outermost edge:
+
+    * the guard is ``except OSError``, never ``except Exception`` (ADR-0007);
+    * a ``GreenMachineError`` raised inside is re-raised unchanged, so no typed
+      failure is relabelled by passing through;
+    * the new error's message carries the run NAME and no filesystem path, so a
+      renderer cannot disclose one even by accident;
+    * the original exception stays attached as ``__cause__``, so engineering
+      diagnosis loses nothing.
+
+    Nothing about replay behaviour or the fail-closed integrity checks changes:
+    the conversion sits strictly outside them and alters no verdict.
     """
+    try:
+        return _build_verified_run(handle)
+    except GreenMachineError:
+        raise
+    except OSError as failure:
+        raise DashboardLoadError(
+            f"archived run files for run '{handle.name}' could not be read",
+            ErrorContext(subject=handle.name),
+        ) from failure
+
+
+def _build_verified_run(handle: RunHandle) -> VerifiedRun:
+    """The verification and translation itself. See :func:`load_verified_run`."""
     reader = bundle_reader(handle.directory)
     result: ReplayResult = replay_run(reader)
     if not result.byte_identical:

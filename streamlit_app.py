@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import streamlit as st
@@ -155,17 +156,6 @@ def _sidebar(run_names: list[str]) -> str:
     return str(selected)
 
 
-def _render_focused_error(run_name: str, failure: GreenMachineError) -> None:
-    badge = ERROR_COLOR
-    st.error(
-        f"{badge.icon} **Archived run could not be verified** ({badge.label})\n\n"
-        f"- run: `{run_name}`\n"
-        f"- error category: `{failure.error_type}`\n"
-        f"- {failure.message}\n\n"
-        f"Select another approved run from the sidebar."
-    )
-
-
 def _render_hub() -> None:
     st.markdown(HUB_CSS, unsafe_allow_html=True)
     st.markdown(HUB_HEADER_HTML, unsafe_allow_html=True)
@@ -183,7 +173,8 @@ def _render_hub() -> None:
         st.markdown("</div>", unsafe_allow_html=True)
     st.caption(
         "Read-only research console over approved archived GM-020 snapshots. "
-        "No live capture. No automated scoring."
+        "No live capture. Engine evaluations use a synthetic, non-production "
+        "configuration."
     )
 
 
@@ -777,17 +768,106 @@ def _render_not_evaluable(result: GradeResult) -> None:
     _render_fallbacks(result)
 
 
+# --------------------------------------------------------------------------
+# Safe presentation of typed failures
+# --------------------------------------------------------------------------
+#
 # A typed failure's own message is written for engineers and can carry an
 # absolute path, a username, or raw OSError prose — for example
 # "[Errno 13] Permission denied: '/very/private/secret/config.yaml'". None of
-# that belongs on a rendered screen, so the UI never prints `failure.message`
-# (nor `failure.context.file_path`). It prints the stable error CATEGORY, which
-# is a closed vocabulary, plus one of these fixed sentences.
+# that belongs on a rendered screen, so NO renderer here prints
+# `failure.message` (nor `failure.context.file_path`, nor an exception string,
+# nor a traceback). Each prints the stable error CATEGORY, which is a closed
+# vocabulary, plus one fixed sentence chosen from a table below.
 #
-# Keyed on the stable `error_type` string rather than on class identity, so the
-# adapter stays deterministic and needs no import from the error hierarchy. An
-# unrecognised category falls back to the generic sentence: safe by
-# construction rather than by remembering to add an entry.
+# Two failure surfaces, two tables, one lookup:
+#
+#   * the archived RUN failed to verify or load  -> _render_focused_error
+#   * the run verified but its EVALUATION failed -> _render_evaluation_unavailable
+#
+# Both tables are keyed on the stable `error_type` string rather than on class
+# identity, so the adapter stays deterministic and needs no import from the
+# error hierarchy.
+
+
+def _safe_wording(failure: GreenMachineError, wording: Mapping[str, str], generic: str) -> str:
+    """One fixed, user-safe sentence for a typed failure. Never its own message.
+
+    The single place the fallback rule lives: an unrecognised category resolves
+    to the generic sentence, so a newly added error class is safe by
+    construction rather than by someone remembering to extend a table.
+    """
+    return wording.get(failure.error_type, generic)
+
+
+# Categories that can surface from verifying and loading one archived run.
+_SAFE_ARCHIVED_RUN_WORDING: dict[str, str] = {
+    "DashboardLoadError": (
+        "The archived run failed its integrity or loading checks and cannot be displayed."
+    ),
+    "CapturePublicationError": (
+        "A file this archived run requires is missing from the run directory, or "
+        "could not be read, so the run cannot be displayed."
+    ),
+    "DigestMismatchError": (
+        "An archived file no longer matches the digest recorded for it, so the "
+        "run cannot be trusted for review."
+    ),
+    "IdentityMismatchError": (
+        "The archived run's recorded identities do not agree with its contents, "
+        "so the run cannot be trusted for review."
+    ),
+    "SamplePolicyError": (
+        "The archived sample policy for this run failed its check, so the run cannot be displayed."
+    ),
+    "IngestionModelError": (
+        "The archived run's manifest does not match the required manifest "
+        "contract, so the run cannot be displayed."
+    ),
+    "EvaluationError": (
+        "An archived snapshot could not be deserialized into a valid record, so "
+        "the run cannot be displayed."
+    ),
+    "DomainError": (
+        "An archived snapshot describes a state the domain model forbids, so the "
+        "run cannot be displayed."
+    ),
+    "DataInputError": (
+        "An archived value violates the project's numeric or serialization "
+        "policy, so the run cannot be displayed."
+    ),
+}
+
+_GENERIC_ARCHIVED_RUN_WORDING = (
+    "The archived run failed its integrity or loading checks and cannot be displayed."
+)
+
+
+def _render_focused_error(run_name: str, failure: GreenMachineError) -> None:
+    """An archived run could not be verified or loaded.
+
+    The typed failure object is passed in whole and left unmutated; only its
+    stable ``error_type`` reaches the screen. The run NAME is shown because the
+    reviewer selected it and it is a plain directory label — never the run's
+    filesystem path, never the failure's own message, never raw ``OSError``
+    prose, never a traceback.
+    """
+    badge = ERROR_COLOR
+    st.error(
+        f"{badge.icon} **Archived run could not be verified** ({badge.label})\n\n"
+        f"- run: `{run_name}`\n"
+        f"- error category: `{failure.error_type}`\n"
+        f"- {_safe_wording(failure, _SAFE_ARCHIVED_RUN_WORDING, _GENERIC_ARCHIVED_RUN_WORDING)}\n\n"
+        f"Select another approved run from the sidebar."
+    )
+    st.caption(
+        "Diagnostic detail is deliberately not shown here: it can contain local "
+        "filesystem paths. The failure is preserved in full for engineering "
+        "diagnosis."
+    )
+
+
+# Categories that can surface from loading the configuration or running the engine.
 _SAFE_FAILURE_WORDING: dict[str, str] = {
     "ConfigParseError": ("The synthetic non-production configuration could not be read or parsed."),
     "ConfigSchemaError": (
@@ -822,8 +902,8 @@ _GENERIC_FAILURE_WORDING = "The deterministic evaluation could not be produced f
 
 
 def _safe_failure_wording(failure: GreenMachineError) -> str:
-    """One fixed, user-safe sentence for a typed failure. Never its own message."""
-    return _SAFE_FAILURE_WORDING.get(failure.error_type, _GENERIC_FAILURE_WORDING)
+    """One fixed, user-safe sentence for an evaluation failure."""
+    return _safe_wording(failure, _SAFE_FAILURE_WORDING, _GENERIC_FAILURE_WORDING)
 
 
 def _render_evaluation_unavailable(failure: GreenMachineError) -> None:

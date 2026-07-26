@@ -308,6 +308,149 @@ def test_the_app_never_converts_a_decimal_through_float() -> None:
             assert node.attr != "__float__"
 
 
+# --------------------------------------------------------------------------
+# Typed failures are never rendered raw (GM-041.5)
+# --------------------------------------------------------------------------
+
+# A typed failure's own message is written for engineers and can carry an
+# absolute path, a username, or raw OSError prose. Reading any of these off a
+# failure and putting it on a screen is the defect this guards; `.error_type` is
+# a closed vocabulary and stays allowed.
+_UNSAFE_FAILURE_ATTRIBUTES = frozenset({"message", "context", "args"})
+
+
+def _failure_parameters(function: ast.FunctionDef) -> set[str]:
+    """Parameters this function declares as typed GreenMachine failures."""
+    arguments = (
+        *function.args.posonlyargs,
+        *function.args.args,
+        *function.args.kwonlyargs,
+    )
+    return {
+        argument.arg
+        for argument in arguments
+        if argument.annotation is not None
+        and "GreenMachineError" in ast.unparse(argument.annotation)
+    }
+
+
+def _raw_failure_offenders(function: ast.FunctionDef) -> list[str]:
+    """Every place this function would put a raw failure in front of a user."""
+    failures = _failure_parameters(function)
+    if not failures:
+        return []
+    offenders: list[str] = []
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in failures
+            and node.attr in _UNSAFE_FAILURE_ATTRIBUTES
+        ):
+            offenders.append(f"line {node.lineno}: reads {node.value.id}.{node.attr}")
+        if isinstance(node, ast.Call):
+            target = node.func
+            named = target.id if isinstance(target, ast.Name) else None
+            streamlit_call = isinstance(target, ast.Attribute) and (
+                isinstance(target.value, ast.Name) and target.value.id == "st"
+            )
+            if named in {"str", "repr"} or streamlit_call:
+                for argument in node.args:
+                    if isinstance(argument, ast.Name) and argument.id in failures:
+                        offenders.append(f"line {node.lineno}: passes {argument.id} to a renderer")
+        if (
+            isinstance(node, ast.FormattedValue)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in failures
+        ):
+            offenders.append(f"line {node.lineno}: interpolates {node.value.id} directly")
+    return offenders
+
+
+def test_no_error_renderer_prints_a_typed_failures_own_message() -> None:
+    """Neither the archived-run nor the Evaluation failure screen prints it.
+
+    Stated as a property of every function that accepts a ``GreenMachineError``
+    rather than as a check on two function names, so a third failure screen
+    added later is covered the day it is written.
+    """
+    tree = parse_file(APP_PATH)
+    offenders: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            found = _raw_failure_offenders(node)
+            if found:
+                offenders[node.name] = found
+
+    assert offenders == {}, f"a typed failure must never be rendered raw: {offenders}"
+
+
+@pytest.mark.parametrize(
+    ("label", "body"),
+    (
+        ("the exact defect", "st.error(f'- {failure.message}')"),
+        ("the structured context", "st.error(f'- {failure.context.file_path}')"),
+        ("the exception string", "st.error(str(failure))"),
+        ("the failure itself", "st.error(failure)"),
+        ("interpolated whole", "st.error(f'{failure}')"),
+        ("its arguments", "st.error(f'{failure.args}')"),
+    ),
+    ids=lambda value: value if isinstance(value, str) else "",
+)
+def test_meta_the_guard_catches_the_shape_it_was_written_for(label: str, body: str) -> None:
+    """A guard nobody has seen fail is not yet a guard.
+
+    ``st.error(f"- {failure.message}")`` is verbatim what the archived-run
+    renderer did before GM-041.5, so the first case here is the real defect.
+    """
+    source = f"def _render(failure: GreenMachineError) -> None:\n    {body}\n"
+    function = ast.parse(source).body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    assert _raw_failure_offenders(function), label
+
+
+def test_meta_the_guard_allows_the_safe_shape() -> None:
+    """And it must not flag the correction, or it would just be noise."""
+    source = (
+        "def _render(failure: GreenMachineError) -> None:\n"
+        "    st.error(f'{failure.error_type}: {_safe_wording(failure, TABLE, GENERIC)}')\n"
+    )
+    function = ast.parse(source).body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    assert _raw_failure_offenders(function) == []
+
+
+def test_both_failure_screens_exist_and_route_through_the_safe_adapter() -> None:
+    """The guard above is only meaningful if both renderers are still there."""
+    tree = parse_file(APP_PATH)
+    renderers = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"_render_focused_error", "_render_evaluation_unavailable"}
+    }
+    assert set(renderers) == {"_render_focused_error", "_render_evaluation_unavailable"}
+
+    for name, function in renderers.items():
+        body = ast.unparse(function)
+        assert "error_type" in body, f"{name} must show the stable error category"
+        assert "_safe_wording" in body or "_safe_failure_wording" in body, (
+            f"{name} must take its wording from the safe adapter"
+        )
+
+
+def test_the_app_never_formats_a_traceback() -> None:
+    """No screen may render a traceback, however it might be obtained."""
+    source = APP_PATH.read_text(encoding="utf-8")
+    tree = parse_file(APP_PATH)
+    imported = {record.top_level for record in collect_imports(tree)}
+    assert "traceback" not in imported
+    for banned in ("format_exc", "print_exc", "format_exception", "__traceback__"):
+        assert banned not in source, banned
+
+
 def test_the_app_writes_no_automated_value_into_manual_review_state() -> None:
     """No assignment into a `review::`-prefixed session-state key outside the
     manual worksheet renderer, and no copy-to-worksheet control anywhere."""

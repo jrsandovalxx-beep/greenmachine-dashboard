@@ -272,6 +272,14 @@ def test_integrity_failure_renders_a_focused_error(
 def test_a_corrupt_audit_report_renders_a_focused_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The stable category and the run name, never the failure's own message.
+
+    Before GM-041.5 this asserted the report FILENAME appeared, because the
+    renderer printed ``failure.message`` verbatim. It no longer does: an
+    engineer-facing message can carry an absolute path, so the screen shows the
+    closed-vocabulary category and one fixed sentence instead. The no-path
+    assertion below is unchanged, and a stricter one is added.
+    """
     root = _corrupted_root(tmp_path, "reports/pull_audit_recent_7d.json", mutate_byte=False)
     monkeypatch.setenv("GREENMACHINE_EVIDENCE_ROOT", str(root))
     app = _fresh_app()
@@ -280,9 +288,11 @@ def test_a_corrupt_audit_report_renders_a_focused_error(
     assert not list(app.exception)
     error_text = " ".join(str(element.value) for element in app.error)
     assert "DashboardLoadError" in error_text
-    assert "pull_audit_recent_7d.json" in error_text
     assert "corrupted_run" in error_text
+    assert "failed its integrity or loading checks" in error_text
     assert str(tmp_path).lower() not in error_text.lower()
+    assert "pull_audit_recent_7d.json" not in error_text
+    assert str(root) not in error_text
 
 
 # --------------------------------------------------------------------------
