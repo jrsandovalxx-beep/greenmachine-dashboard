@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import streamlit as st
@@ -76,9 +77,16 @@ from greenmachine.scoring import ScoringError, score_snapshot  # noqa: E402
 # only through deployment configuration (an environment variable set by the
 # operator or the test harness) — never through a UI control. Adding another
 # approved archived run beneath it requires no dashboard-code change.
+#
+# Held UNRESOLVED on purpose. `Path.resolve()` touches the filesystem and can
+# raise, and this runs at import — before any typed presentation boundary
+# exists — so a resolution failure here would surface as a Streamlit traceback
+# naming the configured root. `discover_runs()` performs the resolution inside
+# its own typed boundary instead, where a failure becomes a DashboardLoadError
+# that the catalog renderer can present safely.
 _EVIDENCE_OVERRIDE = os.environ.get("GREENMACHINE_EVIDENCE_ROOT", "")
 EVIDENCE_ROOT = (
-    Path(_EVIDENCE_OVERRIDE).resolve()
+    Path(_EVIDENCE_OVERRIDE)
     if _EVIDENCE_OVERRIDE
     else _REPO_ROOT / "evidence" / "gm020_vertical_slice"
 )
@@ -114,7 +122,7 @@ DESTINATIONS: tuple[tuple[str, str, str], ...] = (
     ("evaluate", "ENGINE EVALUATION", "Deterministic Engine Evaluation"),
 )
 
-st.set_page_config(page_title="GreenMachine manual review (prototype)", layout="wide")
+st.set_page_config(page_title="GreenMachine research console", layout="wide")
 st.markdown(BASE_THEME_CSS, unsafe_allow_html=True)
 
 
@@ -136,7 +144,7 @@ def _go(screen: str) -> None:
 def _sidebar(run_names: list[str]) -> str:
     with st.sidebar:
         st.title("GreenMachine")
-        st.caption("Manual-review prototype | archived runs only | version 0.2.0")
+        st.caption("Research console | archived evidence and evaluation prototype | version 0.2.0")
         selected = st.selectbox("Approved archived run", run_names, key="run_select")
         st.divider()
         st.subheader("Color legend - data status")
@@ -153,17 +161,6 @@ def _sidebar(run_names: list[str]) -> str:
             "kind. Evaluation only — every decision is yours."
         )
     return str(selected)
-
-
-def _render_focused_error(run_name: str, failure: GreenMachineError) -> None:
-    badge = ERROR_COLOR
-    st.error(
-        f"{badge.icon} **Archived run could not be verified** ({badge.label})\n\n"
-        f"- run: `{run_name}`\n"
-        f"- error category: `{failure.error_type}`\n"
-        f"- {failure.message}\n\n"
-        f"Select another approved run from the sidebar."
-    )
 
 
 def _render_hub() -> None:
@@ -183,7 +180,8 @@ def _render_hub() -> None:
         st.markdown("</div>", unsafe_allow_html=True)
     st.caption(
         "Read-only research console over approved archived GM-020 snapshots. "
-        "No live capture. No automated scoring."
+        "No live capture. Engine evaluations use a synthetic, non-production "
+        "configuration."
     )
 
 
@@ -384,6 +382,94 @@ def _score_from_widget(raw: str) -> int | None:
     return None if raw == "Not scored" else int(raw)
 
 
+# --------------------------------------------------------------------------
+# GM-041.5: durable manual-review state
+# --------------------------------------------------------------------------
+#
+# Streamlit discards a widget-owned session_state key when that widget is not
+# rendered on the current run. The worksheet previously used widget keys as its
+# ONLY storage, so navigating to any other screen destroyed the reviewer's work.
+#
+# The fix is two namespaces with one direction of flow:
+#
+#   review_state::<run>::<field>   durable, never bound to a widget
+#   review_widget::<run>::<field>  transient, owned by Streamlit
+#
+# Widgets hydrate FROM the durable record when the screen renders, and an
+# on_change callback copies the widget value back INTO it. Every read that
+# matters -- the ManualReview record and both exports -- comes from the durable
+# record, never from a widget key. Keys are namespaced per run, so each archived
+# run keeps its own worksheet and gets it back on return.
+
+_STATE_PREFIX = "review_state::"
+_WIDGET_PREFIX = "review_widget::"
+
+_TIMESTAMP_FIELD = "timestamp"
+_NOTES_FIELD = "notes"
+_NOT_SCORED = "Not scored"
+
+
+def _state_key(run_name: str, field: str) -> str:
+    return f"{_STATE_PREFIX}{run_name}::{field}"
+
+
+def _widget_key(run_name: str, field: str) -> str:
+    return f"{_WIDGET_PREFIX}{run_name}::{field}"
+
+
+def _review_fields() -> tuple[str, ...]:
+    """Every durable field of one run's worksheet, in a stable order."""
+    fields = [f"score_{spec.key}" for spec in CATEGORIES]
+    fields += [f"rationale_{spec.key}" for spec in CATEGORIES]
+    fields += [_NOTES_FIELD, _TIMESTAMP_FIELD]
+    return tuple(fields)
+
+
+def _durable(run_name: str, field: str) -> str:
+    """Read one durable value, defaulting to this field's empty representation."""
+    default = _NOT_SCORED if field.startswith("score_") else ""
+    return str(st.session_state.get(_state_key(run_name, field), default))
+
+
+def _persist_field(run_name: str, field: str) -> None:
+    """Copy a widget's current value into the durable record.
+
+    Registered as the widget's ``on_change``. Streamlit runs it while the widget
+    key still exists, which is precisely the window in which the value can be
+    rescued before the key is discarded.
+    """
+    widget_key = _widget_key(run_name, field)
+    if widget_key in st.session_state:
+        st.session_state[_state_key(run_name, field)] = st.session_state[widget_key]
+
+
+def _hydrate_widgets(run_name: str) -> None:
+    """Seed the transient widget keys from the durable record before rendering.
+
+    Only when the widget key is absent: an existing key means Streamlit is
+    mid-interaction and already holds the newer value.
+    """
+    for field in _review_fields():
+        widget_key = _widget_key(run_name, field)
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = _durable(run_name, field)
+
+
+def _manual_review_from_state(run_name: str) -> ManualReview:
+    """Build the record from DURABLE state only -- never from a widget key."""
+    return ManualReview(
+        scores=tuple(
+            (spec.key, _score_from_widget(_durable(run_name, f"score_{spec.key}")))
+            for spec in CATEGORIES
+        ),
+        notes=_durable(run_name, _NOTES_FIELD),
+        rationales=tuple(
+            (spec.key, _durable(run_name, f"rationale_{spec.key}")) for spec in CATEGORIES
+        ),
+        user_entered_timestamp=(_durable(run_name, _TIMESTAMP_FIELD) or None),
+    )
+
+
 def _render_manual_review(data: DashboardData) -> None:
     st.warning(
         f"**{MANUAL_REVIEW_DISCLAIMER}.** You assign every category yourself; the "
@@ -391,42 +477,47 @@ def _render_manual_review(data: DashboardData) -> None:
         f"(S 10-12, A 8-9, B 6-7, C 4-5, D 0-3). No automated recommendation and "
         f"no decision output is produced."
     )
-    key_prefix = f"review::{data.run_name}::"
+    run_name = data.run_name
+    _hydrate_widgets(run_name)
+
+    score_options = {
+        spec.key: [_NOT_SCORED, *[str(value) for value in range(spec.maximum + 1)]]
+        for spec in CATEGORIES
+    }
     score_columns = st.columns(len(CATEGORIES))
     for column, spec in zip(score_columns, CATEGORIES, strict=True):
+        score_field = f"score_{spec.key}"
+        rationale_field = f"rationale_{spec.key}"
         with column:
             st.selectbox(
                 f"{spec.label} (0-{spec.maximum})",
-                ["Not scored", *[str(value) for value in range(spec.maximum + 1)]],
-                key=key_prefix + "score_" + spec.key,
+                score_options[spec.key],
+                key=_widget_key(run_name, score_field),
+                on_change=_persist_field,
+                args=(run_name, score_field),
             )
             st.text_input(
                 "Rationale (optional)",
-                key=key_prefix + "rationale_" + spec.key,
+                key=_widget_key(run_name, rationale_field),
+                on_change=_persist_field,
+                args=(run_name, rationale_field),
             )
-    notes = st.text_area("Notes", key=key_prefix + "notes")
-    user_timestamp = st.text_input(
+    st.text_area(
+        "Notes",
+        key=_widget_key(run_name, _NOTES_FIELD),
+        on_change=_persist_field,
+        args=(run_name, _NOTES_FIELD),
+    )
+    st.text_input(
         "Optional timestamp: typed by you; the app never reads the clock",
-        key=key_prefix + "timestamp",
+        key=_widget_key(run_name, _TIMESTAMP_FIELD),
+        on_change=_persist_field,
+        args=(run_name, _TIMESTAMP_FIELD),
     )
 
-    review = ManualReview(
-        scores=tuple(
-            (
-                spec.key,
-                _score_from_widget(
-                    str(st.session_state.get(key_prefix + "score_" + spec.key, "Not scored"))
-                ),
-            )
-            for spec in CATEGORIES
-        ),
-        notes=str(notes or ""),
-        rationales=tuple(
-            (spec.key, str(st.session_state.get(key_prefix + "rationale_" + spec.key, "") or ""))
-            for spec in CATEGORIES
-        ),
-        user_entered_timestamp=(user_timestamp or None),
-    )
+    # Built from the DURABLE record, so the worksheet and both exports survive
+    # navigation to any other screen and come back intact.
+    review = _manual_review_from_state(run_name)
 
     if review.is_complete:
         st.success(
@@ -684,17 +775,199 @@ def _render_not_evaluable(result: GradeResult) -> None:
     _render_fallbacks(result)
 
 
+# --------------------------------------------------------------------------
+# Safe presentation of typed failures
+# --------------------------------------------------------------------------
+#
+# A typed failure's own message is written for engineers and can carry an
+# absolute path, a username, or raw OSError prose — for example
+# "[Errno 13] Permission denied: '/very/private/secret/config.yaml'". None of
+# that belongs on a rendered screen, so NO renderer here prints
+# `failure.message` (nor `failure.context.file_path`, nor an exception string,
+# nor a traceback). Each prints the stable error CATEGORY, which is a closed
+# vocabulary, plus one fixed sentence chosen from a table below.
+#
+# Three failure surfaces, three tables, one lookup:
+#
+#   * the CATALOG could not be read at all       -> _render_catalog_unavailable
+#   * the archived RUN failed to verify or load  -> _render_focused_error
+#   * the run verified but its EVALUATION failed -> _render_evaluation_unavailable
+#
+# They are kept semantically distinct because they fail at different moments and
+# a reviewer needs to know which. The catalog surface in particular must not
+# claim a *selected* run failed: when it fires, no run has been selected yet.
+#
+# Every table is keyed on the stable `error_type` string rather than on class
+# identity, so the adapter stays deterministic and needs no import from the
+# error hierarchy.
+
+
+def _safe_wording(failure: GreenMachineError, wording: Mapping[str, str], generic: str) -> str:
+    """One fixed, user-safe sentence for a typed failure. Never its own message.
+
+    The single place the fallback rule lives: an unrecognised category resolves
+    to the generic sentence, so a newly added error class is safe by
+    construction rather than by someone remembering to extend a table.
+    """
+    return wording.get(failure.error_type, generic)
+
+
+# Categories that can surface from reading the catalog of approved runs.
+# Deliberately worded about the CATALOG, never about a run: nothing has been
+# selected at this point, so blaming a run would be a lie.
+_SAFE_CATALOG_WORDING: dict[str, str] = {
+    "DashboardLoadError": "The approved archived-run catalog could not be read safely.",
+}
+
+_GENERIC_CATALOG_WORDING = "The approved archived-run catalog could not be read safely."
+
+
+def _render_catalog_unavailable(failure: GreenMachineError) -> None:
+    """The catalog of approved runs could not be read — before any selection.
+
+    Distinct from :func:`_render_focused_error`, which describes a *selected*
+    run. Reached only when discovery itself fails, so it names no run, offers no
+    selector, and shows no partial dashboard. The typed failure is passed in
+    whole and left unmutated; only its stable ``error_type`` reaches the screen,
+    never the configured evidence root.
+    """
+    st.error(
+        f"{ERROR_COLOR.icon} **Archived-run catalog unavailable**\n\n"
+        f"- error category: `{failure.error_type}`\n"
+        f"- {_safe_wording(failure, _SAFE_CATALOG_WORDING, _GENERIC_CATALOG_WORDING)}"
+    )
+    st.caption(
+        "No archived run can be displayed until the catalog becomes available. "
+        "No run was selected, so nothing here describes a particular run. "
+        "Diagnostic detail is deliberately not shown: it can contain local "
+        "filesystem paths. The failure is preserved in full for engineering "
+        "diagnosis."
+    )
+
+
+# Categories that can surface from verifying and loading one archived run.
+_SAFE_ARCHIVED_RUN_WORDING: dict[str, str] = {
+    "DashboardLoadError": (
+        "The archived run failed its integrity or loading checks and cannot be displayed."
+    ),
+    "CapturePublicationError": (
+        "A file this archived run requires is missing from the run directory, or "
+        "could not be read, so the run cannot be displayed."
+    ),
+    "DigestMismatchError": (
+        "An archived file no longer matches the digest recorded for it, so the "
+        "run cannot be trusted for review."
+    ),
+    "IdentityMismatchError": (
+        "The archived run's recorded identities do not agree with its contents, "
+        "so the run cannot be trusted for review."
+    ),
+    "SamplePolicyError": (
+        "The archived sample policy for this run failed its check, so the run cannot be displayed."
+    ),
+    "IngestionModelError": (
+        "The archived run's manifest does not match the required manifest "
+        "contract, so the run cannot be displayed."
+    ),
+    "EvaluationError": (
+        "An archived snapshot could not be deserialized into a valid record, so "
+        "the run cannot be displayed."
+    ),
+    "DomainError": (
+        "An archived snapshot describes a state the domain model forbids, so the "
+        "run cannot be displayed."
+    ),
+    "DataInputError": (
+        "An archived value violates the project's numeric or serialization "
+        "policy, so the run cannot be displayed."
+    ),
+}
+
+_GENERIC_ARCHIVED_RUN_WORDING = (
+    "The archived run failed its integrity or loading checks and cannot be displayed."
+)
+
+
+def _render_focused_error(run_name: str, failure: GreenMachineError) -> None:
+    """An archived run could not be verified or loaded.
+
+    The typed failure object is passed in whole and left unmutated; only its
+    stable ``error_type`` reaches the screen. The run NAME is shown because the
+    reviewer selected it and it is a plain directory label — never the run's
+    filesystem path, never the failure's own message, never raw ``OSError``
+    prose, never a traceback.
+    """
+    badge = ERROR_COLOR
+    st.error(
+        f"{badge.icon} **Archived run could not be verified** ({badge.label})\n\n"
+        f"- run: `{run_name}`\n"
+        f"- error category: `{failure.error_type}`\n"
+        f"- {_safe_wording(failure, _SAFE_ARCHIVED_RUN_WORDING, _GENERIC_ARCHIVED_RUN_WORDING)}\n\n"
+        f"Select another approved run from the sidebar."
+    )
+    st.caption(
+        "Diagnostic detail is deliberately not shown here: it can contain local "
+        "filesystem paths. The failure is preserved in full for engineering "
+        "diagnosis."
+    )
+
+
+# Categories that can surface from loading the configuration or running the engine.
+_SAFE_FAILURE_WORDING: dict[str, str] = {
+    "ConfigParseError": ("The synthetic non-production configuration could not be read or parsed."),
+    "ConfigSchemaError": (
+        "The synthetic non-production configuration does not match the required "
+        "configuration schema."
+    ),
+    "ConfigSemanticError": (
+        "The synthetic non-production configuration is structurally valid but "
+        "violates a model-specification invariant."
+    ),
+    "ConfigVersionError": (
+        "The synthetic non-production configuration's version identity could not be established."
+    ),
+    "ConfigIntegrityError": (
+        "The synthetic non-production configuration failed its integrity check."
+    ),
+    "SourceModifiedError": (
+        "The synthetic non-production configuration changed on disk after it was "
+        "loaded, so it can no longer be trusted for this evaluation."
+    ),
+    "SourceUnavailableError": (
+        "The synthetic non-production configuration is no longer available to re-verify."
+    ),
+    "ScoringConfigError": "The configuration cannot drive the grading engine for this run.",
+    "ScoringInputError": (
+        "The archived snapshot and the configuration disagree, so no evaluation was produced."
+    ),
+    "ScoringError": "The grading engine could not produce an evaluation for this run.",
+}
+
+_GENERIC_FAILURE_WORDING = "The deterministic evaluation could not be produced for this run."
+
+
+def _safe_failure_wording(failure: GreenMachineError) -> str:
+    """One fixed, user-safe sentence for an evaluation failure."""
+    return _safe_wording(failure, _SAFE_FAILURE_WORDING, _GENERIC_FAILURE_WORDING)
+
+
 def _render_evaluation_unavailable(failure: GreenMachineError) -> None:
-    """A configuration or scoring failure — never a run-verification failure."""
+    """A configuration or scoring failure — never a run-verification failure.
+
+    The typed failure object is passed in whole and left unmutated; only its
+    stable ``error_type`` reaches the screen. Nothing derived from a filesystem
+    path, a username, or a traceback is rendered.
+    """
     st.error(
         f"{ERROR_COLOR.icon} **Evaluation unavailable**\n\n"
         f"- error category: `{failure.error_type}`\n"
-        f"- {failure.message}"
+        f"- {_safe_failure_wording(failure)}"
     )
     st.caption(
         "The archived run itself verified successfully. Only the deterministic "
         "evaluation could not be produced, so no partial result is shown. Every "
-        "other screen remains available."
+        "other screen remains available. Diagnostic detail is deliberately not "
+        "shown here: it can contain local filesystem paths."
     )
 
 
@@ -773,7 +1046,16 @@ def _render_evaluation(run: VerifiedRun) -> None:
 
 
 def main() -> None:
-    handles = discover_runs(EVIDENCE_ROOT)
+    # Discovery is the first thing that touches the filesystem, and it happens
+    # before a run has been selected — so the run-level boundary below cannot
+    # protect it. A typed catalog failure gets its own screen and stops here.
+    try:
+        handles = discover_runs(EVIDENCE_ROOT)
+    except GreenMachineError as failure:
+        _render_catalog_unavailable(failure)
+        st.stop()
+        return
+
     if not handles:
         st.error(
             f"{ERROR_COLOR.icon} No approved archived run was found beneath the "

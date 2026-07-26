@@ -347,44 +347,11 @@ def test_the_evaluation_screen_writes_no_manual_review_state() -> None:
     assert "evaluation_profile" in app.session_state.filtered_state
 
 
-def _review_state_after_visiting(screen: str) -> object:
-    """Type into the worksheet, visit ``screen``, and report what survives."""
-    key = "review::prospective_run::rationale_power_profile"
-    app = _app()
-    app.button(key="nav_review").click().run()
-    app.session_state[key] = "user typed this"
-
-    app.button(key="return_hub").click().run()
-    app.button(key=f"nav_{screen}").click().run()
-    app.button(key="return_hub").click().run()
-    app.button(key="nav_review").click().run()
-
-    return app.session_state.filtered_state.get(key, "<absent>")
-
-
-def test_the_evaluation_screen_affects_manual_review_exactly_like_any_other_screen() -> None:
-    """Parity, not persistence.
-
-    Streamlit resets a widget whose element was not rendered on the current
-    run, so a worksheet entry does not survive a round trip through **any**
-    screen — Overview and Data Audit included. That behaviour predates
-    GM-041.5. What this ticket must guarantee is that the evaluation screen is
-    not *special*: it must leave the worksheet in exactly the state an existing
-    screen would. Asserting persistence here would pin a guarantee the app has
-    never made.
-    """
-    through_evaluation = _review_state_after_visiting("evaluate")
-
-    assert through_evaluation == _review_state_after_visiting("overview")
-    assert through_evaluation == _review_state_after_visiting("audit")
-
-
-def test_the_evaluation_screen_offers_no_copy_to_worksheet_control() -> None:
-    app = _open_evaluation("run_gm040_ohtani", 1)
-
-    labels = " ".join(str(button.label).lower() for button in app.button)
-    for banned in ("apply score", "copy to worksheet", "copy to review", "use this score"):
-        assert banned not in labels, banned
+# The former parity test lived here. It asserted only that the evaluation screen
+# left Manual Review in the same state an existing screen would -- which
+# documented the state-loss defect instead of guarding against it. The real
+# guarantee is now enforced in test_manual_review_persistence.py: a completed
+# worksheet survives navigation through every screen, byte-identically, per run.
 
 
 # --------------------------------------------------------------------------

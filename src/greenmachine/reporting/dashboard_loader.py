@@ -76,8 +76,10 @@ from .dashboard_models import (
 __all__ = [
     "DashboardLoadError",
     "RunHandle",
+    "VerifiedRun",
     "discover_runs",
     "load_dashboard",
+    "load_verified_run",
 ]
 
 VERIFICATION_SCOPE_NOTE = (
@@ -114,7 +116,38 @@ def discover_runs(evidence_root: Path) -> tuple[RunHandle, ...]:
     rejected), and free of working-directory assumptions (the caller passes
     an absolute root). A directory qualifies by carrying a ``manifest.json``;
     adding another approved run requires no dashboard-code change.
+
+    **Every failure leaves here typed**, for the same reason
+    :func:`load_verified_run` converts its own — but earlier in the sequence,
+    and that difference is the whole point. Discovery runs *before* a run has
+    been selected, so the run-level boundary cannot protect it: an unreadable
+    evidence root, or one that vanishes between the directory check and the
+    enumeration, raises an ``OSError`` naming the root's absolute path with no
+    typed boundary anywhere between it and the screen.
+
+    The guard is ``except OSError``, never ``except Exception`` (ADR-0007); a
+    ``GreenMachineError`` raised inside is re-raised unchanged; the new error's
+    message names no path, no username, and no drive; and the original exception
+    stays attached as ``__cause__`` so engineering diagnosis loses nothing.
+
+    A genuinely absent or non-directory evidence root is **not** a failure and
+    is unchanged: it still returns an empty tuple. When discovery does fail,
+    nothing partial is returned — the exception replaces the catalog rather than
+    truncating it.
     """
+    try:
+        return _discover_runs(evidence_root)
+    except GreenMachineError:
+        raise
+    except OSError as failure:
+        raise DashboardLoadError(
+            "the approved archived-run catalog could not be read",
+            ErrorContext(subject="archived-run-catalog"),
+        ) from failure
+
+
+def _discover_runs(evidence_root: Path) -> tuple[RunHandle, ...]:
+    """The enumeration itself. See :func:`discover_runs`."""
     root = evidence_root.resolve()
     if not root.is_dir():
         return ()
@@ -632,7 +665,40 @@ def load_verified_run(handle: RunHandle) -> VerifiedRun:
     importing ``greenmachine.scoring`` (or ``greenmachine.config``).
 
     Nothing is written, and no snapshot is copied or rebuilt.
+
+    **Every failure leaves here typed.** A run directory is ordinary filesystem
+    state: a file can be unreadable, or can disappear between discovery and the
+    read that wants it. Those arrive as ``OSError`` subclasses from four places —
+    opening the bundle, replay verification, the snapshot reads, and the report
+    reads — and an ``OSError`` escaping this boundary would reach the application
+    as a raw traceback, because the application catches
+    :class:`~greenmachine.common.errors.GreenMachineError` and nothing wider.
+    They are converted here, once, at the outermost edge:
+
+    * the guard is ``except OSError``, never ``except Exception`` (ADR-0007);
+    * a ``GreenMachineError`` raised inside is re-raised unchanged, so no typed
+      failure is relabelled by passing through;
+    * the new error's message carries the run NAME and no filesystem path, so a
+      renderer cannot disclose one even by accident;
+    * the original exception stays attached as ``__cause__``, so engineering
+      diagnosis loses nothing.
+
+    Nothing about replay behaviour or the fail-closed integrity checks changes:
+    the conversion sits strictly outside them and alters no verdict.
     """
+    try:
+        return _build_verified_run(handle)
+    except GreenMachineError:
+        raise
+    except OSError as failure:
+        raise DashboardLoadError(
+            f"archived run files for run '{handle.name}' could not be read",
+            ErrorContext(subject=handle.name),
+        ) from failure
+
+
+def _build_verified_run(handle: RunHandle) -> VerifiedRun:
+    """The verification and translation itself. See :func:`load_verified_run`."""
     reader = bundle_reader(handle.directory)
     result: ReplayResult = replay_run(reader)
     if not result.byte_identical:
