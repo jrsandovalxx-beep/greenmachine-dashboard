@@ -1,4 +1,8 @@
-# GM-030 — Streamlit Manual-Review Prototype
+# Streamlit Research Console
+
+Introduced by GM-030 as a manual-review prototype. It now carries six screens,
+one of which runs the deterministic grading engine (GM-041.5), so this document
+describes the console as a whole rather than a single screen.
 
 **Status:** working usability prototype, not the final interface and not
 production-ready. The Product Owner uses it against approved archived GM-020

@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from tests.golden.runner import (
     CASES_ROOT,
@@ -46,7 +46,15 @@ def test_ci_profile_is_registered_with_deterministic_settings() -> None:
     assert profile.database is None, "examples must be generated in memory only"
     assert profile.deadline is None, "no wall-clock dependence in pass/fail decisions"
     assert profile.max_examples == 50
-    assert tuple(profile.suppress_health_check) == (), "no health check is suppressed"
+    # Pinned explicitly, and to exactly one value. Hypothesis adds
+    # HealthCheck.too_slow by itself on a hosted runner, so an unpinned profile
+    # would differ between a developer machine and CI; the registration declares
+    # the same suppression so the effective settings are identical everywhere.
+    # This must stay an equality against one tuple -- accepting either shape
+    # would re-admit the environment dependence it exists to rule out.
+    assert tuple(profile.suppress_health_check) == (HealthCheck.too_slow,), (
+        "exactly HealthCheck.too_slow is suppressed, in every environment"
+    )
 
 
 def test_exploratory_override_profile_is_registered_but_not_default() -> None:

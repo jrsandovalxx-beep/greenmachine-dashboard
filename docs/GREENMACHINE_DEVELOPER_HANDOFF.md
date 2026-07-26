@@ -4,17 +4,19 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-25 (revision 12), on
-`feature/gm041-5-stabilization-ux-review`. **GM-041 is APPROVED AND MERGED**
-(`origin/main` at `28727fa`). **GM-041.5 — Stabilization & UX Review — is
-COMPLETE and awaiting review**: the engine's evaluation is now visible in the
-Streamlit console under a disclaimed non-production configuration.
-The signal-removal amendment is implemented, snapshot/configuration coherence
-is enforced, the sample evaluation is generated, all gates are green, and the
-work sits on a branch grafted cleanly onto `origin/main`. See §12 for the
-delivered state, §11a for the repository-history issue and its resolution, §9
-for the deferred Windows archive line-ending risk, §0 for the standing
-one-ticket rule, and §16 for the revision history.
+Last updated: 2026-07-26 (revision 13), on
+`feature/gm041-5-hf1-ci-and-hub-wording`. **GM-041 and GM-041.5 are both
+APPROVED AND MERGED** — GM-041.5 landed as PR #4, and `origin/main` is at
+`48e8443`. **GM-041.5-HF1 — CI stability and landing-page wording — is COMPLETE
+and awaiting review** (§12i): merged `main` inherited a Hypothesis profile whose
+effective settings differed under `CI=true`, so GitHub Actions was red on every
+commit while the local suite was green, and the landing hub still called the
+whole application a manual-review console. Both are corrected; no production
+behaviour, evidence, golden, scoring rule, threshold, schema, or configuration
+content changed. See §12 for the delivered GM-041.5 state, §12i for this hotfix,
+§11a for the repository-history issue and its resolution, §9 for the deferred
+Windows archive line-ending risk, §0 for the standing one-ticket rule, and §16
+for the revision history.
 
 ---
 
@@ -388,7 +390,7 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,697 tests green (rev 12) across
+`streamlit_app.py`; evidence ships in-repo. 3,698 tests green (rev 13) across
 hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
@@ -1035,6 +1037,85 @@ guard never looked. The catalog screen needed no special case: it was covered
 the moment it was written, which was the point of stating the guard as a
 property.
 
+### 12i. GM-041.5-HF1 — CI stability and landing-page wording (rev 13)
+
+A post-merge hotfix on top of the merged GM-041.5 (PR #4, `main` at `48e8443`).
+Two defects, both inherited by `main` at merge, neither affecting production
+behaviour.
+
+**Defect 1: GitHub Actions was red on every commit, and had been for five
+deliveries.** `tests/conftest.py` registered the `greenmachine-ci` Hypothesis
+profile without pinning `suppress_health_check`, and
+`tests/property/test_golden_properties.py` asserted
+`tuple(profile.suppress_health_check) == ()`. Hypothesis detects a hosted runner
+via the `CI` environment variable and adds `HealthCheck.too_slow` to the
+effective settings **on its own**, so the assertion could only hold off-CI:
+
+```
+FAILED tests/property/test_golden_properties.py::test_ci_profile_is_registered_with_deterministic_settings
+AssertionError: assert (HealthCheck.too_slow,) == ()
+1 failed, 3702 passed
+```
+
+The deeper problem was not the assertion but what it revealed: a *determinism*
+profile whose effective settings depended on the environment. That is the one
+thing such a profile must never do.
+
+**Correction.** The registration pins the suppression explicitly:
+
+```python
+settings.register_profile(
+    "greenmachine-ci",
+    derandomize=False,
+    database=None,
+    deadline=None,
+    max_examples=50,
+    print_blob=False,
+    suppress_health_check=(HealthCheck.too_slow,),
+)
+```
+
+Every other field is byte-for-byte what it was. The effective settings are now
+identical locally and under `CI=true`, and the value is something the project
+chose rather than something the runner decided. The test asserts that **single**
+tuple; it was deliberately not widened to accept either shape, because a
+"passes with `()` or with `(too_slow,)`" assertion would re-admit exactly the
+environment dependence it exists to rule out.
+
+**Why it went unnoticed for five deliveries.** Every local verification ran on
+Windows without `CI` set, where the suite is genuinely green. The failure was
+only ever visible on the hosted runner. Local verification now includes a
+`CI=true` pass for this reason — see the matrix below.
+
+**Defect 2: the landing hub named one screen, not the console.** The subtitle
+read `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0`. That stopped being true when
+the Engine Evaluation screen began running the deterministic grading engine, and
+it is the largest text on the landing page. Rev 10 corrected the page title and
+sidebar caption and rev 12 corrected the hub caption's "No automated scoring"
+claim, but this banner was outside both scopes.
+
+It now reads `GREENMACHINE RESEARCH CONSOLE · v0.2.0`. Wording only: the
+original artwork, the layout, and every CSS class name are untouched, and no
+recommendation, wager, pick, confidence, or decision language is introduced. The
+`streamlit_app.py` module docstring and the `docs/STREAMLIT_PROTOTYPE.md` title
+described the whole application the same stale way and are corrected to match;
+the historical GM-030 references in `README.md`, `CHANGELOG.md`, and §2/§4 of
+this document are **accurate history** and were left alone.
+
+`test_the_landing_hub_names_the_console_not_one_of_its_screens` asserts the new
+subtitle renders, the old one does not, all six destinations remain, and
+`ENGINE EVALUATION` is still available — the wording claim and the six-screen
+claim have to stand or fall together.
+
+**Verification.** The suite was run six ways, three hash seeds with `CI` unset
+and the same three with `CI=true`, and the outcome is identical in all six.
+Both evidence bundles replay byte-identically, the sample JSON and Markdown
+regenerate byte-for-byte, the configuration's source digest and semantic hash
+are unchanged, and the four archived synthetic scores are unchanged
+(Devers 2.9 / D and 4.55 / C, Ohtani 5.15 / C and 7.1 / B). No path beneath
+`evidence/` or `tests/golden/` changed, and no domain contract, evaluation
+schema, scoring rule, or threshold changed.
+
 ---
 
 ## 13. FUTURE ROADMAP
@@ -1105,7 +1186,7 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,697 passed as of rev 12, plus
+3. `python -m pytest -q` — expect fully green (3,698 passed as of rev 13, plus
    five Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
@@ -1162,6 +1243,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 13 | 2026-07-26 | this commit, on `feature/gm041-5-hf1-ci-and-hub-wording` | **GM-041.5-HF1 — CI stability and landing-page wording** (§12i). A post-merge hotfix on the merged GM-041.5 (PR #4, `main` at `48e8443`). (1) **GitHub Actions was red on every commit and had been for five deliveries.** The `greenmachine-ci` Hypothesis profile did not pin `suppress_health_check`, and Hypothesis adds `HealthCheck.too_slow` itself when it detects a hosted runner — so a *determinism* profile had environment-dependent effective settings, and `test_ci_profile_is_registered_with_deterministic_settings` passed locally while failing on every hosted run. The registration now pins `suppress_health_check=(HealthCheck.too_slow,)` explicitly, every other field unchanged, and the test asserts that single tuple; it was deliberately **not** widened to accept either shape, which would have re-admitted the dependence it exists to rule out. Local verification now includes a `CI=true` pass, since that is the only way this class of defect is visible from a developer machine. (2) **The landing hub named one screen rather than the console**: `MANUAL REVIEW CONSOLE · PROTOTYPE · v0.2.0` became `GREENMACHINE RESEARCH CONSOLE · v0.2.0`, wording only, with the original artwork, layout, and CSS untouched and no recommendation or decision language introduced; the module docstring and `docs/STREAMLIT_PROTOTYPE.md` title were corrected the same way, while the historical GM-030 references were left alone as accurate. A focused regression asserts the new subtitle, the absence of the old one, all six destinations, and `ENGINE EVALUATION`. Verified six ways — hash seeds 0/1/42 with `CI` unset and again with `CI=true`, identical outcome in all six; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence and goldens unchanged. No frozen contract changed. |
 | 12 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 catalog discovery failure safety** (§12h). `main()` called `discover_runs(EVIDENCE_ROOT)` **before** any `try/except GreenMachineError`, and discovery converted none of its three fallible filesystem operations (`root.resolve()`, `root.iterdir()`, `child.resolve()`) — so an unreadable evidence root, or one vanishing between the directory check and the enumeration, escaped as a raw `OSError` naming the root's absolute path. §12g could not cover this: `load_verified_run` types the failures of one *selected* run, and discovery is what produces the list to select from, so it runs strictly earlier with no run-level boundary in between. `discover_runs` is now a thin typed boundary around `_discover_runs` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, names no path, and preserves `__cause__`; discovery stays deterministic, sorted, and path-confined, the symlink-escape rule is untouched, an absent or non-directory root still returns `()`, and no partial catalog is ever returned. A dedicated `_render_catalog_unavailable` screen shows *Archived-run catalog unavailable*, the stable category, and one fixed safe sentence — deliberately not the archived-run screen, which names a selected run that does not exist yet — with no selector, no partial dashboard, and no message, context, exception string, evidence root, or traceback. `EVIDENCE_ROOT` no longer calls `.resolve()` at import, where a failure would precede every typed boundary; the override is stored unresolved and resolved inside `discover_runs`. New coverage: a discovery unit suite injecting at all three fallible operations (with a seam that runs the whole algorithm, including the real confinement check, so its control is not vacuous) and an AppTest suite covering the renderer and the real end-to-end conversion, plus two anti-vacuity controls. The AST guard now also tracks failures bound by `except GreenMachineError as ...`, so `main()` is covered, and a new test asserts the guard genuinely inspects all three screens rather than passing by silence. Verified: 3,697 passed / 6 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 11 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 archived-run failure safety** (§12g). Two independent defects on the archived-run error path, both real. (1) **Raw-message disclosure.** `_render_focused_error()` printed `failure.message`, so a path-bearing `DashboardLoadError` rendered the full private filesystem path — the same class of defect §12e fixed for the Evaluation screen, in the other renderer. A safe archived-run presentation adapter now shows the fixed heading, the selected run **name**, the stable `error_type`, and one fixed safe sentence from a nine-category table with a generic fallback; never the message, the context file path, an exception string, raw `OSError` prose, an absolute path, a username, or a traceback. Both adapters now share one `_safe_wording` lookup, so the fallback rule exists in exactly one place. (2) **Uncaught `OSError`.** A `PermissionError` or a racing `FileNotFoundError` from bundle reading, replay verification, a snapshot read, or a report read escaped the loader as a raw traceback, because `OSError` is not a `GreenMachineError` and the app catches nothing wider. `load_verified_run` is now a thin boundary around `_build_verified_run` with a narrow `except OSError` that re-raises any `GreenMachineError` unchanged, carries the run name and no path, and preserves `__cause__`; `except Exception` is not used and no integrity verdict changes. New regressions: a loader unit suite injecting both `OSError` kinds at all four read boundaries with sensitive-looking paths (plus a control proving the seam still loads a healthy run), and an AppTest suite driving both the renderer and the real end-to-end conversion while proving a second approved run stays usable. An AST anti-regression guard now forbids **any** function taking a `GreenMachineError` from rendering it raw, with meta-tests proving the guard catches the exact prior shape. The hub's stale *No automated scoring* claim is corrected. Verified: 3,665 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration source digest and semantic hash unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |
 | 10 | 2026-07-25 | this commit, on `feature/gm041-5-stabilization-ux-review` | **GM-041.5 review corrections.** (1) **Manual Review state loss fixed** (§12d). Streamlit discards widget-owned session keys when their widgets are not rendered, and the worksheet used widget keys as its only storage — so navigating anywhere destroyed the reviewer's scores, rationales, notes, timestamp, and export bytes. Rev 9 shipped a *parity* test asserting the evaluation screen behaved like Overview, which documented the defect instead of guarding the requirement; that test is deleted. The correction introduces a durable `review_state::<run>::<field>` namespace that no widget owns, hydrated into transient `review_widget::` keys on render and written back by `on_change`, with `ManualReview` and both exports built from the durable record alone and every run namespaced separately. Fourteen new AppTest cases drive **real widget interactions**, walk the hub plus Overview, Data Audit, and both evaluation profiles, and assert every visible value and both export payloads are byte-identical on return, plus per-run isolation and restoration. (2) **Absolute-path disclosure fixed** (§12e). The failure renderer printed `failure.message`, which for a configuration failure names the absolute path it tried to read. A deterministic adapter now maps the stable `error_type` to one fixed user-safe sentence across ten categories with a safe generic fallback; the screen never renders the message, the context file path, or a traceback, and the typed error is left unmutated. Tests assert neither a Windows-style nor a POSIX-style sensitive path nor any identifying segment appears in rendered text, including the unreadable-configuration case, injected rather than depending on filesystem permissions so it stays cross-platform. (3) **Terminal branches covered** (§12f): `NotEvaluableGradeResult` and `ScoringInputError`/`ScoringConfigError`/`ScoringError` are exercised by patching the public scoring boundary before the app imports it — a test seam, not a production switch. (4) Page title and sidebar caption no longer describe the console as manual-review-only; `VerifiedRun` and `load_verified_run` added to `dashboard_loader.__all__`. Verified: 3,623 passed / 5 skipped across hash seeds 0/1/42, all gates clean, both evidence bundles replay byte-identically, sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`, configuration identity unchanged, the four synthetic scores unchanged, and evidence and goldens byte-identical to `origin/main`. No frozen contract changed. |

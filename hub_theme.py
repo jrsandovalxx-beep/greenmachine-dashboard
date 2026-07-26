@@ -143,11 +143,16 @@ HUB_CSS = """
 """
 
 # The orb + wordmark, as one HTML block (original artwork; generated CSS only).
+#
+# The subtitle says RESEARCH CONSOLE, not MANUAL REVIEW CONSOLE: the hub opens
+# six destinations, one of which runs the deterministic grading engine, so
+# naming the whole application after a single screen was inaccurate. Wording
+# only -- the artwork, layout, and CSS class names are unchanged.
 HUB_HEADER_HTML = """
 <div class="gm-hub-wrap">
   <div class="gm-orb" role="img" aria-label="GreenMachine energy sphere"></div>
   <div class="gm-ring"></div>
   <p class="gm-title">GREENMACHINE</p>
-  <p class="gm-subtitle">MANUAL REVIEW CONSOLE &middot; PROTOTYPE &middot; v0.2.0</p>
+  <p class="gm-subtitle">GREENMACHINE RESEARCH CONSOLE &middot; v0.2.0</p>
 </div>
 """
