@@ -13,10 +13,13 @@ whole-document substring ban: a phrase banned outright would eventually collide
 with a legitimate historical sentence, and the guard would then be pressuring
 someone to edit the record.
 
-The specific regressions guarded are the ones GM-041.5-HF2 rev 15 corrected:
-claiming the engine evaluation is still pending, showing GM-041 or GM-041.5 as
-unmerged, mis-sequencing the roadmap, and reporting five Windows platform skips
-where there are six.
+The regressions guarded began as the ones GM-041.5-HF2 rev 15 corrected: claiming
+the engine evaluation is still pending, showing GM-041 or GM-041.5 as unmerged,
+mis-sequencing the roadmap, and reporting five Windows platform skips where there
+are six. Rev 17 added the ones its own closeout found — a stale evidence
+inventory, a merged pull request still described as open, and a delivered
+milestone still described as unreviewed, in a table row or in the prose beside
+it.
 """
 
 from __future__ import annotations
@@ -130,7 +133,7 @@ def test_the_overview_keeps_the_three_bounds_on_what_that_means(label: str, phra
 
 
 # --------------------------------------------------------------------------
-# 2. GM-041 and GM-041.5 are merged
+# 2. Every delivered milestone carries its own approved status
 # --------------------------------------------------------------------------
 
 
@@ -155,25 +158,54 @@ def _milestone_row(ticket: str) -> str:
     return matched[0]
 
 
-@pytest.mark.parametrize("ticket", ("GM-041", "GM-041.5"), ids=("GM-041", "GM-041.5"))
-def test_the_milestone_table_marks_the_delivered_tickets_merged(ticket: str) -> None:
-    """Each delivered ticket's OWN row says merged.
+# Each delivered ticket and the words its OWN status cell must carry. GM-040 and
+# GM-040-HF1 are approved and frozen rather than merged: they were approved on
+# the evidence of the Angels validation and the deployed application, not by
+# pull requests of their own, so requiring "MERGED" of them would be requiring
+# the wrong thing.
+_APPROVED_MILESTONE_ROWS = (
+    ("GM-040", ("APPROVED", "FROZEN")),
+    ("GM-040-HF1", ("APPROVED", "FROZEN")),
+    ("GM-041", ("MERGED",)),
+    ("GM-041.5", ("MERGED",)),
+    ("GM-041.5-HF1", ("MERGED",)),
+    ("GM-041.5-HF2", ("MERGED",)),
+    ("GM-040 Angels validation", ("MERGED",)),
+)
 
-    The earlier version asserted only that "MERGED" appeared somewhere in the
+# Whole words rather than full phrases. "AWAITING REVIEW" did not match the
+# §2 GM-040 narrative's "awaiting independent review", which is exactly how that
+# sentence outlived the sweep that was meant to catch it.
+_STALE_STATUS_WORDS = ("AWAITING", "PENDING", "NOT STARTED", "UNAPPROVED")
+
+
+@pytest.mark.parametrize(
+    ("ticket", "required"),
+    _APPROVED_MILESTONE_ROWS,
+    ids=[ticket for ticket, _ in _APPROVED_MILESTONE_ROWS],
+)
+def test_the_milestone_table_marks_the_delivered_tickets_approved(
+    ticket: str, required: tuple[str, ...]
+) -> None:
+    """Each delivered ticket's OWN row carries its own approved status.
+
+    An earlier version asserted only that "MERGED" appeared somewhere in the
     table, which one merged row could satisfy on behalf of every other. This
-    reads the selected row's status cell.
+    reads the selected row's status cell and nothing else, so no ticket can be
+    vouched for by its neighbours.
     """
     row = _milestone_row(ticket)
     status = row.split("|")[2].upper()
 
-    assert "MERGED" in status, f"{ticket} row does not say merged: {row.strip()}"
+    missing = [word for word in required if word not in status]
+    assert missing == [], f"{ticket} row status is missing {missing}: {row.strip()}"
 
     # The same row, checked for the stale wordings it must never return to.
     # Asserted here rather than in a separate test because it is a statement
     # about this ticket's row, and the parametrization that selects that row
     # already lives here.
-    for stale in ("AWAITING REVIEW", "PENDING INDEPENDENT REVIEW", "NOT STARTED"):
-        assert stale not in status, f"{ticket} row carries stale status {stale!r}: {row.strip()}"
+    carried = [word for word in _STALE_STATUS_WORDS if word in status]
+    assert carried == [], f"{ticket} row carries stale status {carried}: {row.strip()}"
 
 
 def test_meta_the_row_matcher_does_not_confuse_gm041_with_gm0415() -> None:
@@ -190,23 +222,66 @@ def test_no_current_facing_section_heading_calls_merged_work_awaiting_review() -
     GM-041.5 had merged; the milestone-table guard above did not see it because
     it lives in a different section. Every current-facing heading is checked.
     """
-    merged = ("GM-041", "GM-041.5")
-    offenders = []
-    for heading in re.findall(r"^##+ .*$", _current_facing(), re.MULTILINE):
-        if "AWAITING REVIEW" not in heading.upper():
-            continue
-        if any(ticket in heading for ticket in merged) and "HF2" not in heading:
-            offenders.append(heading.strip())
+    offenders = [
+        heading.strip()
+        for heading in re.findall(r"^##+ .*$", _current_facing(), re.MULTILINE)
+        if "AWAITING REVIEW" in heading.upper()
+    ]
 
     assert offenders == [], f"merged work still headed as awaiting review: {offenders}"
 
 
-def test_the_open_correction_is_named_and_separated_from_the_merged_work() -> None:
-    table = _flat(_section(r"2\. "))
+def test_no_current_facing_prose_carries_a_stale_approval_status() -> None:
+    """Approved work may not still be described as pending, in prose or a table.
 
-    assert "GM-041.5-HF1" in table
-    assert "GM-041.5-HF2" in table
-    assert "PR #6" in table
+    HF2 landed as PR #6, the Angels validation as PR #7, and GM-040 itself is
+    approved and frozen on the strength of that validation.
+
+    This complements the row guard rather than repeating it. The row guard reads
+    status cells; a milestone's *narrative* can contradict its row, and did —
+    §2's GM-040 paragraph still ended "Status: delivered, awaiting independent
+    review" after the table was corrected, and a sweep for the exact phrase
+    "awaiting review" walked straight past it. Both spellings are listed.
+
+    The revision history is excluded, so entries that accurately described an
+    earlier open state are untouched.
+    """
+    current = _flat(_current_facing()).lower()
+
+    stale = (
+        "PR #6 open",
+        "awaiting final approval",
+        "currently open correction",
+        "pending independent review",
+        "awaiting independent review",
+        "awaiting review",
+        "delivered but unapproved",
+    )
+    offenders = [phrase for phrase in stale if phrase.lower() in current]
+
+    assert offenders == [], f"stale current-facing approval status: {offenders}"
+
+
+@pytest.mark.parametrize(
+    ("ticket", "pull_request"),
+    (("GM-041.5-HF2", "PR #6"), ("GM-040 Angels validation", "PR #7")),
+    ids=("PR #6", "PR #7"),
+)
+def test_the_milestone_table_cites_each_pull_request_in_its_own_row(
+    ticket: str, pull_request: str
+) -> None:
+    """The PR number must appear in the row it belongs to.
+
+    This looked for the PR number anywhere in the table and then read a
+    character window around the FIRST occurrence. That broke the moment GM-040's
+    row began citing PR #7 as the validation that approved it: the window landed
+    on GM-040's row and reported the Angels validation as unmerged. A position
+    window is the same mistake as a substring match on a ticket name, so this
+    selects the row by exact first cell like every other row assertion here.
+    """
+    row = _milestone_row(ticket)
+
+    assert pull_request in row, f"{ticket} row does not cite {pull_request}: {row.strip()}"
 
 
 # --------------------------------------------------------------------------
@@ -222,17 +297,20 @@ def test_the_roadmap_shows_the_delivered_tickets_complete() -> None:
     assert roadmap.count("complete") >= 2
 
 
-def test_the_roadmap_names_hf2_as_the_currently_open_correction() -> None:
+def test_the_roadmap_shows_no_ticket_currently_open() -> None:
+    """Everything through the Angels validation merged; nothing is in flight."""
     roadmap = _flat(_section(r"13\. FUTURE ROADMAP"))
 
-    assert "GM-041.5-HF2 is the currently open correction" in roadmap
-    assert "no later ticket begins until it is merged" in roadmap
+    assert "No ticket is currently open" in roadmap
+    assert "currently open correction" not in roadmap
 
 
-def test_the_roadmap_keeps_gm042_as_the_next_planned_product_ticket() -> None:
+def test_the_roadmap_shows_gm042_not_started_and_next_eligible() -> None:
     roadmap = _flat(_section(r"13\. FUTURE ROADMAP"))
 
-    assert "GM-042 remains the next planned product ticket" in roadmap
+    assert "GM-042" in roadmap
+    assert "not started" in roadmap
+    assert "next eligible" in roadmap
 
 
 # --------------------------------------------------------------------------
@@ -248,9 +326,45 @@ def test_quick_start_reports_six_windows_platform_skips() -> None:
     assert "five Windows platform skips" not in quick_start
 
 
+# --------------------------------------------------------------------------
+# 5. The evidence inventory
+# --------------------------------------------------------------------------
+
+EVIDENCE_ROOT = REPO_ROOT / "evidence" / "gm020_vertical_slice"
+
+
+def _archived_runs() -> list[str]:
+    """The runs actually on disk, by the same rule `discover_runs` applies."""
+    return sorted(
+        path.name for path in EVIDENCE_ROOT.iterdir() if (path / "manifest.json").is_file()
+    )
+
+
+def test_the_handoff_inventory_matches_the_runs_on_disk() -> None:
+    """The document must name the bundles that exist, not a stale subset.
+
+    Checked against the filesystem rather than a hard-coded list, so adding an
+    approved run fails here until the handoff records it — which is the point,
+    and is how the two-run inventory survived nine new bundles unnoticed.
+    """
+    runs = _archived_runs()
+    current = _current_facing()
+
+    assert len(runs) == 11, f"expected eleven archived runs on disk, found {len(runs)}: {runs}"
+    missing = [run for run in runs if run not in current]
+    assert missing == [], f"archived runs absent from the current-facing handoff: {missing}"
+
+
+def test_the_handoff_states_the_eleven_run_inventory() -> None:
+    current = _flat(_current_facing())
+
+    assert "eleven approved archived runs" in current
+    assert "eleven bundles" in current
+
+
 # The suite size this revision actually produces. Stated once here so the two
 # current-facing places that quote it cannot drift apart, or away from reality.
-EXPECTED_PASS_COUNT = "3,746"
+EXPECTED_PASS_COUNT = "3,800"
 
 
 def test_the_current_expected_pass_count_matches_the_recorded_result() -> None:

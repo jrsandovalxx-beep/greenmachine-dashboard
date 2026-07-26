@@ -4,22 +4,18 @@ Audience: a senior engineer (or a fresh Claude conversation) continuing
 development. This is the technical handoff, not a user summary. When this
 document and the code disagree, the code and its tests win — update this file.
 
-Last updated: 2026-07-26 (revision 16), on
-`feature/gm041-5-hf2-hypothesis-health-policy`. **GM-041, GM-041.5, and
-GM-041.5-HF1 are all APPROVED AND MERGED** — GM-041.5 landed as PR #4
-(`48e8443`), HF1 as PR #5 (`c2653bb`), and `origin/main` is at `c2653bb`. The
-Streamlit console **renders the deterministic engine's evaluation** under the
-labelled synthetic non-production configuration; live capture remains
-command-line only. **GM-041.5-HF2 — deterministic Hypothesis health-check
-policy — is COMPLETE, with PR #6 open and awaiting final approval** (§12j): HF1
-correctly
-pinned `suppress_health_check` to stop the profile inheriting a CI-dependent
-value, but pinned it to `(HealthCheck.too_slow,)`, which contradicts the
-no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`,
-and ADR-0008. HF2 keeps the explicit pin and empties it, so the profile is both
-environment-independent and compliant. HF1's landing-page wording work is
-untouched. No production behaviour, evidence, golden, scoring rule, threshold,
-schema, or configuration content changed. See §12 for the delivered GM-041.5
+Last updated: 2026-07-26 (revision 17), on
+`docs/gm040-angels-validation-closeout`. **Everything through the GM-040 Angels
+operator validation is APPROVED AND MERGED.** GM-041.5 landed as PR #4
+(`48e8443`), HF1 as PR #5 (`c2653bb`), **HF2 as PR #6 (`4b2dcfb`)**, and the
+**GM-040 Angels validation as PR #7 (`f5f1f96`)**, which is where `origin/main`
+now sits. The Streamlit console **renders the deterministic engine's evaluation**
+under the labelled synthetic non-production configuration; live capture remains
+command-line only. GM-041.5-HF2 restored the accepted no-suppression Hypothesis
+health-check policy (§12j) and is closed. **No ticket is open. GM-042 is the next
+eligible product ticket and has not started.** No production behaviour, evidence,
+golden, scoring rule, threshold, schema, or configuration content changed by
+either closeout. See §12 for the delivered GM-041.5
 state, §12i for HF1, §12j for this hotfix, §11a for the repository-history issue
 and its resolution, §9 for the deferred Windows archive line-ending risk, §0 for
 the standing one-ticket rule, and §16 for the revision history.
@@ -123,12 +119,13 @@ reviewed and **FROZEN** unless marked otherwise.
 | Sprint 1 (GM-001…GM-010, +r-passes) | FROZEN | Domain contracts, config system, determinism primitives, persistence ports, golden/property harness, closeout docs |
 | GM-020 (+r1, r2) | FROZEN (baseline `greenmachine-gm-020-r2.zip`, sha256 `232b8a4d…d957`) | Thin production ingestion vertical slice |
 | GM-030 (+r1, r2) | FROZEN / deployed | Streamlit manual-review prototype + console hub + deployment readiness |
-| GM-040 | Delivered, pending independent review | Operator workflow over the unchanged pipeline + live Ohtani evidence |
-| GM-040-HF1 | Delivered hotfix | `-e .` in requirements.txt so Community Cloud installs the project |
+| GM-040 | **APPROVED and FROZEN** | Operator workflow over the unchanged pipeline + live Ohtani evidence; the workflow was validated by the July 26, 2026 Angels prospective team capture delivered through PR #7 (`f5f1f96`, see §12k) and is frozen on that evidence |
+| GM-040-HF1 | **APPROVED and FROZEN** | `-e .` in requirements.txt so Community Cloud installs the project; validated by the successfully deployed, Product Owner-verified public Streamlit application |
 | GM-041 | **APPROVED and MERGED** into `origin/main` (`28727fa`) | First production deterministic grading engine (pure, config-driven) + betting-classification removal |
 | GM-041.5 | **APPROVED and MERGED** as PR #4, merge commit `48e8443` (see §12a) | Engine evaluation surfaced in the Streamlit console + UX stabilization |
 | GM-041.5-HF1 | **APPROVED and MERGED** as PR #5, merge commit `c2653bb` (see §12i) | CI stability and landing-page wording |
-| GM-041.5-HF2 | **COMPLETE — PR #6 open, awaiting final approval** (this branch; see §12j) | Restores the accepted no-suppression Hypothesis health-check policy |
+| GM-041.5-HF2 | **APPROVED and MERGED** as PR #6, merge commit `4b2dcfb` (see §12j) | Restores the accepted no-suppression Hypothesis health-check policy |
+| GM-040 Angels validation | **APPROVED and MERGED** as PR #7, merge commit `f5f1f96` (see §12k) | Nine prospective operator captures over the confirmed Angels lineup, Angels at Giants, gamePk 823194 |
 
 **GM-020 — ingestion vertical slice.** Objective: one real game/hitter/pitcher
 from live providers to two frozen snapshots with deterministic replay.
@@ -178,7 +175,13 @@ conflict)) + `scripts/run_gm040_real_slice.py`. Live evidence:
 Dodgers at Mets, gamePk 823600, expected pitcher Nolan McLean (690997,
 cross-check matched), captured prospectively ~18h pre-game, replays
 byte-identically. Also closed the unguarded `validation` placeholder.
-Status: delivered, awaiting independent review; treat as baseline.
+Status: **APPROVED and FROZEN** — independently approved on the evidence of the
+July 26, 2026 Angels prospective team capture (§12k, PR #7 `f5f1f96`): nine
+confirmed Angels hitters captured from real providers, all nine genuinely
+prospective, every new bundle published, all nine new bundles and both
+pre-existing bundles replaying byte-identically, all eleven runs rendering in
+the Streamlit console, and the deployment independently approved, merged, and
+verified by the Product Owner. Treat as baseline.
 
 **GM-040-HF1.** Community Cloud crashed with `PackageNotFoundError` because
 the host installs only `requirements.txt` and `src/greenmachine/__init__.py`
@@ -187,7 +190,12 @@ build artifact had masked this in every local smoke). Fix: `-e .` as the first
 line of `requirements.txt` (the host installs the project itself);
 `__init__.py` deliberately left in its frozen metadata-only form; deployment-
 contract tests updated (self-install line + four bounded deps, drift-checked
-against pyproject). Status: delivered.
+against pyproject). Status: **APPROVED and FROZEN** — the `-e .` Community Cloud
+installation fix was validated by the deployed public Streamlit application
+itself: it installs and starts on the host, the Product Owner verified the
+deployment, all eleven archived runs load in the run selector, and the Engine
+Evaluation workflow operates there after PRs #6 and #7. A deployment fix is
+provable only by a working deployment, and that is what this is.
 
 ## 3. CURRENT REPOSITORY ARCHITECTURE
 
@@ -272,8 +280,24 @@ reports/{eligibility,normalization_*,schema,pull_audit_*,pitcher_ingredients,
          limitations,operator_report,replay}.json
 OPERATOR_REPORT.md            # GM-040 runs
 ```
-Current bundles: `prospective_run` (Devers/823196, GM-020-r2) and
-`run_gm040_ohtani` (Ohtani/823600, GM-040). NEVER modify either.
+Current bundles: **eleven approved archived runs**. Two predate the Angels
+validation — `prospective_run` (Devers/823196, GM-020-r2) and `run_gm040_ohtani`
+(Ohtani/823600, GM-040) — and nine arrived with PR #7, all against Angels at
+Giants, gamePk 823194, slate 2026-07-26:
+
+| Run directory | Hitter | MLBAM |
+|---|---|---|
+| `run_gm040_zach_neto_2026_07_26` | Zach Neto | 687263 |
+| `run_gm040_mike_trout_2026_07_26` | Mike Trout | 545361 |
+| `run_gm040_vaughn_grissom_2026_07_26` | Vaughn Grissom | 687093 |
+| `run_gm040_jorge_soler_2026_07_26` | Jorge Soler | 624585 |
+| `run_gm040_nolan_schanuel_2026_07_26` | Nolan Schanuel | 694384 |
+| `run_gm040_jo_adell_2026_07_26` | Jo Adell | 666176 |
+| `run_gm040_denzer_guzman_2026_07_26` | Denzer Guzman | 694203 |
+| `run_gm040_jose_siri_2026_07_26` | Jose Siri | 642350 |
+| `run_gm040_logan_ohoppe_2026_07_26` | Logan O'Hoppe | 681351 |
+
+**NEVER modify any of the eleven.**
 
 **Replay** (`replay_run`): strict manifest contract (duplicate-JSON-key
 rejection, exact field sets, per-entry capture_id + manifest_id verification,
@@ -411,7 +435,7 @@ workflow; Streamlit console (deployed; run selector auto-discovers bundles
 under `evidence/gm020_vertical_slice/`); manual review + exports; release
 tooling. Deployment: push to `main` → Community Cloud auto-redeploys;
 requirements install `-e .` + four bounded deps; no secrets; entry
-`streamlit_app.py`; evidence ships in-repo. 3,746 tests green (rev 16) across
+`streamlit_app.py`; evidence ships in-repo. 3,800 tests green (rev 17) across
 hash seeds 0/1/42; ruff + mypy --strict clean.
 
 ## 8. DEFERRED FEATURES (all explicitly ruled out of past tickets)
@@ -702,8 +726,9 @@ demonstration only and say nothing about the hitter.**
 
 **Branch:** `feature/gm041-5-stabilization-ux-review`, from `origin/main`
 `28727fa`; merged as **PR #4**, merge commit `48e8443`. Two hotfixes followed:
-**HF1** (§12i) merged as PR #5, `c2653bb`; **HF2** (§12j) is complete with PR #6
-open.
+**HF1** (§12i) merged as PR #5, `c2653bb`; **HF2** (§12j) merged as PR #6,
+`4b2dcfb`. The GM-040 Angels operator validation (§12k) followed and merged as
+PR #7, `f5f1f96`.
 
 **Objective:** surface the GM-041 deterministic engine's evaluation in the
 existing Streamlit console while stabilizing the experience — without turning
@@ -1232,6 +1257,79 @@ six-destination hub regression all stand. No application behaviour, scoring
 rule, threshold, evidence bundle, golden output, configuration content,
 `.gitattributes`, or nested non-canonical `greenmachine/` path changed.
 
+### 12k. GM-040 Angels operator validation — APPROVED AND MERGED (rev 17)
+
+Merged as **PR #7**, merge commit `f5f1f96`, over head `c884988`. A validation
+exercise, not a feature: no application, Streamlit, ingestion, scoring,
+configuration, schema, threshold, frozen contract, golden, or pre-existing
+evidence path changed. The commit adds nine evidence bundles and one report.
+
+**What ran.** Nine independent operator captures, one per confirmed Los Angeles
+Angels starter, against Angels at San Francisco Giants, **gamePk 823194**, Oracle
+Park, slate date 2026-07-26. All nine published, and all nine independently
+recorded gamePk 823194, lineup status `confirmed`, and resolved the same expected
+pitcher from the feed — **Carson Whisenhunt (MLBAM 687931)**.
+
+**The captures are genuinely prospective.** The validation request assumed the
+game had already begun and asked for a `retrospective-development` capture mode.
+Neither held: the schedule feed reported the game as `Pre-Game` / `Preview` with
+first pitch at `2026-07-26T20:05:00+00:00`, and the captures ran `18:53:19Z` to
+`18:54:56Z` — **roughly 70 minutes before first pitch**. `retrospective-development`
+is also not a mode the operator CLI accepts; the choices are `prospective` and
+`retrospective`.
+
+Labelling a genuinely pre-first-pitch capture as retrospective would have written
+a false timing claim into nine immutable, digest-pinned bundles, in the one
+dimension this pipeline treats as its central evidential property. The Product
+Owner was consulted and chose to capture as prospective. Every bundle records
+`classification: prospective` and `captured before scheduled start: true`, proven
+from recorded manifest instants and re-proven on every replay.
+
+**Verification at merge.** All nine bundles **replay byte-identically**, checked
+in two separate passes — once immediately after capture and again after the full
+test and quality gates. The two pre-existing bundles also still replay OK and
+were untouched. In the Streamlit console the archived-run selector offered
+**eleven** runs; all six screens were opened for each of the nine Angels runs (54
+screen renders) and both window profiles on Engine Evaluation (18 evaluations),
+with zero exceptions, zero leaked filesystem paths, zero leaked usernames, zero
+tracebacks, and zero provider exceptions. The **public Streamlit deployment was
+verified by the Product Owner**.
+
+**The evaluations are synthetic.** Real archived baseball inputs were scored by
+the **synthetic, non-production GM-041 configuration**
+(`gm041-engine-synthetic-0`, source digest `51dac8cc…`, semantic hash
+`4502a00b…`). No approved production model configuration exists while Q11–Q16
+remain open. The recorded totals and tiers demonstrate that the workflow runs end
+to end; **they establish no production prediction or recommendation**, and the
+validation report presents hitters in lineup order rather than any ranking.
+
+Every one of the eighteen evaluations produced 20 contiguous audit entries, no
+warnings, one fallback (`attack_angle_quality` through `event_derived`), and four
+missing components — `pitch_mix_pressure`, `put_away_pitch_exploitation`, and
+`park` as SOURCE_UNAVAILABLE, `weather` as WEATHER_UNAVAILABLE. Those are honest
+gaps in the archived slice with no approved source, recorded as explicit zeros
+under each component's `record_missing` policy. Nothing is imputed.
+
+**Why the suite grew.** PR #7 moved the full-suite result from 3,746 to
+**3,791 passed / 6 skipped**. Several suites parametrize over *discovered*
+evidence runs, so nine new bundles add cases automatically. **No handwritten
+production test was added by PR #7** — that delta is entirely evidence-driven.
+This closeout commit then added seven cases to the currency guard, so the
+current result is **3,800 passed / 6 skipped**.
+
+The validation report lives at
+`reports/GM040_ANGELS_GIANTS_2026_07_26_VALIDATION.md`.
+
+**What this validation settled.** On the strength of it, **GM-040 itself is now
+independently APPROVED and FROZEN** (§2). The operator workflow had been carried
+as delivered-but-unreviewed since its own ticket, on the evidence
+of a single Ohtani capture; nine independent captures over a confirmed team
+lineup — all prospective, all published, all replaying byte-identically, all
+rendering in the console, and deployed and verified by the Product Owner —
+retired that qualification. GM-040 is a frozen baseline and its behaviour is not
+to change without a new ticket. This says nothing about the model: the
+evaluations remain synthetic and no approved production configuration exists.
+
 ---
 
 ## 13. FUTURE ROADMAP
@@ -1244,14 +1342,13 @@ rule, threshold, evidence bundle, golden output, configuration content,
 | 1 | **GM-041** | complete — merged (`28727fa`) | Production grading engine |
 | 2 | **GM-041.5** | complete — merged as PR #4 (`48e8443`) | Stabilization & UX Review |
 | 2a | **GM-041.5-HF1** | complete — merged as PR #5 (`c2653bb`) | CI stability and landing-page wording |
-| 2b | **GM-041.5-HF2** | **open — PR #6, awaiting final approval** | Hypothesis health-check policy |
-| 3 | **GM-042** | not started | Record Book & Performance Analytics |
+| 2b | **GM-041.5-HF2** | complete — merged as PR #6 (`4b2dcfb`) | Hypothesis health-check policy |
+| 2c | **GM-040 Angels validation** | complete — merged as PR #7 (`f5f1f96`) | Nine prospective operator captures, Angels at Giants |
+| 3 | **GM-042** | **not started — next eligible** | Record Book & Performance Analytics |
 
-**GM-041.5-HF2 is the currently open correction.** Under the §0 one-ticket rule
-no later ticket begins until it is merged and closed — GM-042 included.
-
-GM-042 remains the next planned product ticket, subject to the prerequisites and
-Product Owner decisions below.
+**No ticket is currently open.** GM-042 is the next eligible product ticket under
+the §0 one-ticket rule, and has not started. It remains subject to the
+prerequisites and Product Owner decisions below.
 
 **GM-042 — Record Book & Performance Analytics (APPROVED 2026-07-25).**
 The Record Book measures **GreenMachine's historical performance — not
@@ -1307,7 +1404,7 @@ the user's own results and the model's calibration — it still never advises).
    `docs/ARCHITECTURE.md`, `docs/OPEN_QUESTIONS.md` (what NOT to invent),
    `docs/GM_040_RUNBOOK.md`.
 2. `python -m pip install -e ".[dev,ui]"` in a venv (Python 3.11+).
-3. `python -m pytest -q` — expect fully green (3,746 passed as of rev 16, plus
+3. `python -m pytest -q` — expect fully green (3,800 passed as of rev 17, plus
    six Windows platform skips). Any failure is a real regression.
 4. Gates: `ruff format --check .` · `ruff check .` · `mypy --strict src`.
 5. Verify evidence: `python scripts/run_gm040_real_slice.py replay --run-dir
@@ -1321,8 +1418,9 @@ the user's own results and the model's calibration — it still never advises).
 **Paths:** entry `streamlit_app.py`; theme `hub_theme.py`; engine
 `src/greenmachine/scoring/`; operator `src/greenmachine/ingestion/operator.py`;
 orchestration `src/greenmachine/ingestion/orchestration.py`; evidence root
-`evidence/gm020_vertical_slice/` (bundles: `prospective_run`,
-`run_gm040_ohtani`); goldens `tests/golden/cases/`; synthetic sample policy
+`evidence/gm020_vertical_slice/` (eleven bundles: `prospective_run`,
+`run_gm040_ohtani`, and nine `run_gm040_*_2026_07_26` Angels runs); goldens
+`tests/golden/cases/`; synthetic sample policy
 `tests/fixtures/ingestion/gm020_nonproduction_sample_policy.json`; synthetic
 engine config (GM-041)
 `config/nonproduction/gm041_engine_synthetic.yaml` with snapshot
@@ -1364,6 +1462,7 @@ are the capture-test workhorses. Exit codes for runners: 0 ok · 2 typed error
 | Rev | Date | Commit / branch | Changes |
 |---|---|---|---|
 | 1 | 2026-07-25 | `ab095d0` on `feature/gm041-production-grading-engine` | Initial canonical handoff: project overview, frozen milestone status through GM-040+HF1, architecture, pipeline, grading model per MODEL_SPEC v6.3 (including the signal engine as then specified), ADRs, deferred features, debt, development rules, GitHub workflow, GM-041 plan, roadmap, quick start, appendix. |
+| 17 | 2026-07-26 | this commit, on `docs/gm040-angels-validation-closeout` | **Documentation closeout only.** No application, Streamlit, ingestion, scoring, configuration, schema, threshold, evidence, golden, report, or frozen-contract path changed; only the canonical handoff and its narrowly scoped currency guard. Records the state after two merges the handoff had not caught up with. **GM-041.5-HF2 merged** as PR #6 (`4b2dcfb`) and is closed; the header, §2 milestone table, and §13 roadmap had all still shown it as open and awaiting final approval. **The GM-040 Angels operator validation merged** as PR #7 (`f5f1f96`) and is approved, recorded in a new §12k: nine confirmed Angels starters captured against gamePk 823194, genuinely **prospective** with every capture completing roughly 70 minutes before first pitch, Carson Whisenhunt feed-resolved on all nine, all nine replaying byte-identically across two passes, and the public Streamlit deployment verified by the Product Owner. The evidence inventory in §4 and the §15 appendix now list **eleven approved archived runs** rather than two. The current full-suite result is **3,800 passed / 6 skipped**, identical under `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true`. PR #7 itself took the count from 3,746 to 3,791 purely through evidence-discovery parametrization over the nine new bundles — no handwritten production test was added by PR #7 — and the nine currency-guard cases added by this closeout bring it to 3,800. The documented figure follows the measurement rather than the reverse; no test was shaped to preserve a number. The validation used real archived inputs with the synthetic non-production configuration and establishes no production prediction or recommendation. **GM-042 remains not started and is now the next eligible product ticket**, with no ticket currently open. **GM-040 is now independently APPROVED and FROZEN.** The reviewer ruled the operator workflow approved on the completed validation — nine confirmed Angels hitters captured from real providers, all nine genuinely prospective, every new bundle published, all nine new bundles and both pre-existing bundles replaying byte-identically, all eleven runs rendering in the Streamlit console, and PR #7 independently approved, merged, deployed, and verified by the Product Owner. Two current-facing statements had carried GM-040 as unapproved since its own ticket and are corrected: the §2 milestone row, which read *Delivered, pending independent review* and now records the approval and freeze together with the July 26 Angels capture that established it, and the §2 GM-040 narrative, which read *Status: delivered, awaiting independent review* — that second one had escaped the earlier sweep because it said "awaiting **independent** review", a wording the guard was not matching. §12k records what the validation settled. **GM-040-HF1 is likewise independently APPROVED and FROZEN.** Its `-e .` Community Cloud installation fix is validated by the deployed public Streamlit application itself — it installs and starts on the host, the Product Owner verified the deployment, all eleven archived runs load in the run selector, and the Engine Evaluation workflow operates there after PRs #6 and #7; a deployment fix is provable only by a working deployment. Its §2 row read *Delivered hotfix* and its narrative ended *Status: delivered*, neither of which stated an approval; both now read **APPROVED and FROZEN**. Both approvals are about the operator workflow and its deployment only; the evaluations remain synthetic and no approved production model configuration exists. The currency guard was extended to require the current pass count, six skips, the eleven-run inventory, PR #6 and PR #7 shown as merged, GM-042 shown as not started, and no current-facing claim that HF2 or the Angels validation awaits review; the exact-row milestone guard now also requires the GM-040 and GM-040-HF1 rows to each carry an approved-and-frozen status, matched on exact first cell and rejects pending, awaiting, and not-started wordings in it, and a companion check sweeps current-facing prose for the same stale statuses so a narrative sentence cannot drift away from the table again. Historical revision entries were not edited. |
 | 16 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **Current-state documentation and guard correction only.** No production code, application behaviour, test policy, evidence bundle, golden output, configuration content, scoring rule, threshold, or frozen contract changed. (1) **Current test count corrected to 3,746 passed / 6 skipped.** Revision 15 added the 19 documentation-currency tests but continued to quote the pre-revision figure of 3,727 in §7, in §14, and inside its own entry's "authoritative current result" — a revision cannot introduce tests and then report the count from before it did. All three now read 3,746. Revision 14 and every earlier entry keep their own figures: each is an accurate record of the commit it describes. (2) **Stale `this branch` annotation removed** from the §3 architecture tree, where `scoring/` was still labelled *GM-041 (this branch)*; the current branch is HF2, and GM-041 merged three tickets ago. The GM-041.5-HF2 milestone row keeps its own legitimate *this branch* wording. (3) **Milestone-row guard strengthened.** `test_the_milestone_table_marks_the_delivered_tickets_merged` checked that the ticket appeared somewhere in §2 and that the word MERGED appeared somewhere in the whole table — which one merged row could satisfy on behalf of every other, and which a substring match would let `GM-041` answer using `GM-041.5`'s row. It now selects the single row whose **first cell equals** the ticket exactly, reads that row's own status cell, and refuses both a missing MERGED and any return to awaiting-review wording, per ticket. A meta-test asserts the matcher distinguishes `GM-041` from `GM-041.5`. The pass-count assertion now pins the current-facing figure to one value rather than only checking the two places agree with each other; revision-history entries remain excluded from every check. Verified: 3,746 passed / 6 skipped, identical with `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true`; ruff format, ruff check, and mypy --strict src clean; GitHub Actions green on Python 3.11 and 3.12. |
 | 15 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **Current-state documentation correction only.** No code, test, or test-policy file changed; no application behaviour, evidence bundle, golden output, configuration content, scoring rule, threshold, or frozen contract changed. The canonical handoff carried current-facing statements that the merged project state had overtaken. (1) **§1 engine visibility**: it said the Streamlit prototype does not yet render the engine's evaluation and that surfacing it belongs to GM-041.5. GM-041.5 is merged and the console does render it, so §1 now states that, together with the three bounds that matter — every evaluation runs under the labelled synthetic non-production configuration, no approved production model configuration exists while Q11–Q16 remain open, and live capture is still command-line only. (2) **§2 milestone table**: GM-041.5 read *COMPLETE, awaiting review*; it is now recorded as merged via PR #4 (`48e8443`), with HF1 merged via PR #5 (`c2653bb`) and HF2 shown separately as complete with PR #6 open. (3) **§13 roadmap**: it showed GM-041 awaiting review and GM-041.5 as not-yet-startable, and §8 called GM-042 blocked behind GM-041 completion. GM-041 and GM-041.5 are complete; the table now carries a status column, names HF2 as the currently open correction under the §0 one-ticket rule, and keeps GM-042 as the next planned product ticket subject to its unchanged prerequisites. (4) **§14 Quick Start**: the expected result said five Windows platform skips; it is six — the sixth is the symlink-confinement case added with the discovery suite in rev 12. The authoritative current result is 3,746 passed / 6 skipped. Historical revision entries were **not** edited: each accurately described the state at the time it was written, and the counts inside them stand. A narrowly scoped currency test now guards the overview/status/roadmap/Quick Start sections against these specific regressions without touching the revision history. |
 | 14 | 2026-07-26 | this commit, on `feature/gm041-5-hf2-hypothesis-health-policy` | **GM-041.5-HF2 — deterministic Hypothesis health-check policy** (§12j). Supersedes one decision in §12i and nothing else. HF1 correctly diagnosed that an unspecified `suppress_health_check` is inherited from the active built-in profile — which suppresses `HealthCheck.too_slow` on a hosted runner — and correctly concluded the field must be pinned; it then pinned it to `(HealthCheck.too_slow,)`, adopting the environment's value as the project's own. That contradicted the no-suppression policy stated in `tests/property/conftest.py`, `tests/README.md`, and ADR-0008, leaving the repository asserting two policies at once with no test noticing. The registration now passes `suppress_health_check=()` — **explicit**, so nothing is inherited, and **empty**, so the value is the accepted policy; the two properties are independent and HF1 achieved only the first. The test asserts exactly `()`, still as a single equality. No other Hypothesis setting changed and the fixed seed 20260724 still arrives through addopts. `HealthCheck.too_slow` does **not** fire under the restored policy in any environment; no timing limit was raised and no test skipped, xfailed, or weakened. New coverage: a **subprocess** probe proving the profile is identical under `CI` unset, `CI=true`, and `GITHUB_ACTIONS=true` (in-process `os.environ` edits prove nothing, because Hypothesis decides CI-ness at import), comparing the three dumps to each other as well as to the declared values, plus a meta-test confirming an unspecified profile still varies; and a documentation-integrity guard that reads the registration from the AST and compares every claimed value across all four sources semantically, so they may be reworded but cannot disagree. HF1's landing-page wording work is untouched. Verified: 3,727 passed / 6 skipped across hash seeds 0/1/42 with `CI` unset and again with `CI=true`, plus a `GITHUB_ACTIONS=true` run; all gates clean; both bundles replay byte-identically; sample JSON and Markdown byte-identical at `960a0106…` and `af804228…`; configuration identity unchanged; the four synthetic scores unchanged; evidence, goldens, `.gitattributes`, and the nested tree unchanged. No frozen contract changed. |
